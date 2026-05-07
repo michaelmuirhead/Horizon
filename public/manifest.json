@@ -1,0 +1,25 @@
+{
+  "name": "Horizon",
+  "short_name": "Horizon",
+  "description": "Envelope-style budgeting in the spirit of YNAB.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#06070d",
+  "theme_color": "#06070d",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "maskable"
+    }
+  ]
+}
