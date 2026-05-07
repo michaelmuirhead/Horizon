@@ -1,0 +1,165 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Brand tokens are CSS variables so we can swap entire palettes via a
+ * data-theme attribute on <html>. Tailwind's color tokens point at these,
+ * and `text-fg` / `bg-accent/N` honor the alpha-modifier syntax (`text-fg/70`)
+ * by feeding rgb-triple variables through `<alpha-value>`. */
+:root {
+  color-scheme: dark;
+  --page: #06070d;
+  --card: #0f1124;
+  --card-elevated: #171a30;
+  --list-row: #0c0e1d;
+  --pill: #383a48;
+  --pill-text: #9aa0b3;
+  --accent: #6366f1;
+  --accent-soft: #4f52d9;
+  --mint: #24c69a;
+  --gradient-from: #322ec7;
+  --gradient-to: #1ab880;
+  --fg-rgb: 255 255 255;
+  --accent-rgb: 99 102 241;
+  --mint-rgb: 36 198 154;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --page: #f5f5fa;
+  --card: #ffffff;
+  --card-elevated: #eef0f5;
+  --list-row: #fafbff;
+  --pill: #d6d8e0;
+  --pill-text: #4b4f5b;
+  --accent: #4f52d9;
+  --accent-soft: #6366f1;
+  --mint: #15a37a;
+  --gradient-from: #6366f1;
+  --gradient-to: #15a37a;
+  --fg-rgb: 26 28 44;
+  --accent-rgb: 79 82 217;
+  --mint-rgb: 21 163 122;
+}
+
+[data-theme="pokemon"] {
+  color-scheme: dark;
+  --page: #1a1f3a;
+  --card: #2a3a5e;
+  --card-elevated: #3b4f7c;
+  --list-row: #233149;
+  --pill: #5a6a82;
+  --pill-text: #f0f1f6;
+  --accent: #ee1515;          /* Pokéball red */
+  --accent-soft: #cc1010;
+  --mint: #ffcb05;            /* Pikachu yellow */
+  --gradient-from: #ee1515;
+  --gradient-to: #3b4cca;     /* Poké blue */
+  --fg-rgb: 255 255 255;
+  --accent-rgb: 238 21 21;
+  --mint-rgb: 255 203 5;
+}
+
+html,
+body {
+  background-color: var(--page);
+  color: rgb(var(--fg-rgb));
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior-y: none;
+}
+
+body {
+  min-height: 100dvh;
+}
+
+/* Hide vertical scrollbar but keep scroll. */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+/* Cross-page fades via the browser's View Transitions API where supported.
+ * Browsers without it fall back to instant navigation as before. */
+@view-transition {
+  navigation: auto;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 180ms;
+  animation-timing-function: ease-out;
+}
+
+/* Subtle fade-up used on accordion content (e.g. CategoryGroupSection,
+ * CollapsibleCard) so expansions don't snap. */
+@keyframes hz-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.hz-fade-in {
+  animation: hz-fade-in 160ms ease-out;
+}
+
+/* Slow mint pulse used to celebrate a freshly-reached goal target. */
+@keyframes hz-pulse-mint {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(var(--mint-rgb) / 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgb(var(--mint-rgb) / 0);
+  }
+}
+.hz-pulse-mint {
+  animation: hz-pulse-mint 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+  .hz-fade-in {
+    animation: none;
+  }
+  .hz-pulse-mint {
+    animation: none;
+  }
+}
+
+/* Visible focus ring on every keyboard-focused interactive element. The
+ * accent matches whichever theme is active. Pointer-driven focus stays
+ * hidden via :focus-visible. */
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Skip-to-main link — only visible when keyboard-focused. */
+.hz-skip-link {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -100%);
+  z-index: 100;
+  background: var(--accent);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0 0 0.5rem 0.5rem;
+  font-weight: 700;
+  font-size: 0.875rem;
+  transition: transform 120ms ease-out;
+}
+.hz-skip-link:focus {
+  transform: translate(-50%, 0);
+  outline: none;
+}
