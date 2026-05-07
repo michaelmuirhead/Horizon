@@ -1,0 +1,59 @@
+# Firebase App Hosting backend config.
+#
+# One-time setup (run from the repo root, on your machine, not CI):
+#   1. npm install -g firebase-tools
+#   2. firebase login
+#   3. firebase init apphosting
+#      • Pick the Firebase project you want to deploy to.
+#      • Connect your GitHub repository when prompted.
+#      • Pick the live branch (usually `main`).
+#   4. firebase apphosting:backends:create  (if init didn't make one)
+#
+# After that, every push to the live branch builds and deploys automatically
+# via Cloud Build → Cloud Run. Production URL shows up in the Firebase
+# Console → App Hosting page.
+#
+# This file is read by App Hosting at build/deploy time. Tweak as needed.
+
+runConfig:
+  # Single small instance is plenty for a personal-finance PWA. Bump cpu /
+  # memoryMiB if SSR work grows.
+  cpu: 1
+  memoryMiB: 512
+  # Scale to zero when idle so the free tier covers it.
+  minInstances: 0
+  maxInstances: 1
+  # Each instance handles up to N concurrent requests before another spins up.
+  concurrency: 80
+  # Generous request timeout; SSR responses should be much faster than this.
+  timeoutSeconds: 60
+
+# Add `env:` blocks here when you need build- or runtime-time config. Secrets
+# go through Secret Manager; see Firebase docs for the syntax.
+#
+# The Cloud Sync feature reads NEXT_PUBLIC_FIREBASE_* values at build time.
+# Wire them up here so the deployed app can talk to your Firebase project:
+#
+# env:
+#   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+#     value: your-public-api-key
+#     availability: [BUILD]
+#   - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+#     value: your-project.firebaseapp.com
+#     availability: [BUILD]
+#   - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+#     value: your-project-id
+#     availability: [BUILD]
+#   - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+#     value: your-project.firebasestorage.app
+#     availability: [BUILD]
+#   - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+#     value: "1234567890"
+#     availability: [BUILD]
+#   - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+#     value: 1:1234567890:web:abc123
+#     availability: [BUILD]
+#
+# These specific values are public per Firebase docs (security is enforced
+# by Firestore rules + auth domain allowlists), so they're safe to commit
+# directly. Truly secret values would go in Secret Manager instead.
