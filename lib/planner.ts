@@ -1,30 +1,48 @@
+// Top-level grouping. A folder holds many budgets — e.g. "Muirhead
+// Budget" containing "March", "Dentist", "PTO".
+export type PlannerFolder = {
+  id: string;
+  name: string;
+};
+
+// A single ledger inside a folder. Each budget has its own running
+// balance built from its own entries — entries do NOT carry across
+// budgets, even within the same folder.
+export type PlannerBudget = {
+  id: string;
+  folderId: string;
+  name: string;
+};
+
 export type PlannerEntry = {
   id: string;
+  budgetId: string;
   label: string;
   // Signed: positive = income, negative = expense.
   amount: number;
-  date: string; // ISO YYYY-MM-DD
+  // Optional ISO YYYY-MM-DD. Undated entries render with a "Date"
+  // placeholder in the ledger and don't appear on the calendar.
+  date?: string;
+  // Paid entries are still counted toward the running balance and
+  // totals; the flag just drives the strikethrough styling and a
+  // separate "Paid" subtotal at the bottom of the budget.
+  paid?: boolean;
 };
+
+export const samplePlannerFolders: PlannerFolder[] = [
+  { id: "folder-muirhead", name: "Muirhead Budget" },
+  { id: "folder-section6", name: "Section 6" },
+  { id: "folder-rekindle", name: "ReKindle" },
+];
+
+export const samplePlannerBudgets: PlannerBudget[] = [];
 
 export const samplePlannerEntries: PlannerEntry[] = [];
 
-export function plannerRunningTotal(entries: PlannerEntry[]): number {
-  return entries.reduce((sum, e) => sum + e.amount, 0);
-}
-
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
   day: "numeric",
+  month: "short",
   year: "numeric",
-});
-
-const weekdayFormatter = new Intl.DateTimeFormat("en-US", {
-  weekday: "short",
-});
-
-const dayHeaderFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
 });
 
 export function formatPlannerDate(iso: string): string {
@@ -32,89 +50,69 @@ export function formatPlannerDate(iso: string): string {
   return dateFormatter.format(new Date(y, m - 1, d));
 }
 
-export function formatPlannerWeekday(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return weekdayFormatter.format(new Date(y, m - 1, d));
-}
-
-export function formatPlannerDayHeader(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return dayHeaderFormatter.format(new Date(y, m - 1, d));
-}
-
 export type PlannerSummary = {
+  // Sum of positive-amount entries (regardless of paid).
   income: number;
-  expense: number; // stored as a positive magnitude
+  // Sum of |negative-amount| entries (regardless of paid).
+  expense: number;
+  // Sum of |negative-amount| entries with paid=true. Shown separately
+  // as an informational "already settled" line; it's a subset of
+  // `expense` and doesn't change `balance`.
+  paid: number;
+  // income - expense — what the budget projects to net out at.
   balance: number;
 };
 
 export function summarizeEntries(entries: PlannerEntry[]): PlannerSummary {
   let income = 0;
   let expense = 0;
+  let paid = 0;
   for (const e of entries) {
     if (e.amount > 0) income += e.amount;
     else expense += -e.amount;
+    if (e.paid && e.amount < 0) paid += -e.amount;
   }
-  return { income, expense, balance: income - expense };
+  return { income, expense, paid, balance: income - expense };
 }
 
-export type PlannerDayRow = {
+export type EntryWithBalance = {
   entry: PlannerEntry;
-  // Cumulative balance after this entry posted, walking the month in
-  // chronological (then id-stable) order.
+  // Cumulative budget balance after this entry posted. Walks through
+  // the entries in array order, regardless of paid state.
   running: number;
 };
 
-export type PlannerDayGroup = {
-  date: string; // ISO YYYY-MM-DD
-  rows: PlannerDayRow[]; // displayed in the user's drag-defined order
-  dayTotal: number; // signed net for the day
-};
-
-// Build day-grouped rows for a month-scoped slice of entries. Groups come
-// back newest-day first; rows within each day preserve the source array
-// order so user drag-reorder is the source of truth (Array.prototype.sort
-// is stable, so equal-date rows keep input order). Running balance walks
-// chronologically across day boundaries so it tracks the new order
-// immediately after a drop. Pass `openingBalance` to seed the running
-// tally — used to carry the prior months' balance into the viewed month.
-export function groupEntriesByDay(
+// Walks a budget's entries in their stored order, building a running
+// balance for the ledger view. The balance includes paid entries.
+export function entriesWithRunningBalance(
   entries: PlannerEntry[],
-  openingBalance = 0,
-): PlannerDayGroup[] {
-  const ascending = entries
-    .slice()
-    .sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? -1 : 1));
-
-  const byDate = new Map<string, PlannerDayRow[]>();
-  let running = openingBalance;
-  for (const entry of ascending) {
+): EntryWithBalance[] {
+  let running = 0;
+  return entries.map((entry) => {
     running += entry.amount;
-    const list = byDate.get(entry.date) ?? [];
-    list.push({ entry, running });
-    byDate.set(entry.date, list);
-  }
-
-  const groups: PlannerDayGroup[] = [];
-  for (const [date, rows] of byDate) {
-    const dayTotal = rows.reduce((sum, r) => sum + r.entry.amount, 0);
-    groups.push({ date, rows, dayTotal });
-  }
-  groups.sort((a, b) => (a.date < b.date ? 1 : -1));
-  return groups;
+    return { entry, running };
+  });
 }
 
-// Sum every entry dated strictly before the first day of the given month
-// key. Used to seed the Planner's running tally so a fresh month doesn't
-// snap back to $0 when the user has unspent income from prior months.
-export function carryForwardBalance(
+// Net balance of a budget (signed). Used by the budget list rows and
+// the folder-level total.
+export function budgetBalance(entries: PlannerEntry[]): number {
+  return entries.reduce((sum, e) => sum + e.amount, 0);
+}
+
+// Net balance for a folder = sum of every entry across every budget in
+// that folder.
+export function folderBalance(
+  folderId: string,
+  budgets: PlannerBudget[],
   entries: PlannerEntry[],
-  monthKey: string,
 ): number {
-  const cutoff = `${monthKey}-01`;
+  const budgetIds = new Set(
+    budgets.filter((b) => b.folderId === folderId).map((b) => b.id),
+  );
   let sum = 0;
   for (const e of entries) {
-    if (e.date < cutoff) sum += e.amount;
+    if (budgetIds.has(e.budgetId)) sum += e.amount;
   }
   return sum;
 }

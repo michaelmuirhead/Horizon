@@ -11,38 +11,42 @@ export type PlannerFormValues = Omit<PlannerEntry, "id">;
 
 type Direction = "expense" | "income";
 
-function todayIso(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 type Props = {
   initial?: PlannerEntry;
+  // Required: which budget the entry lands on. Edit flows pass the
+  // existing entry's budgetId; new flows pass the budget the user is
+  // currently inside.
+  budgetId: string;
   saveLabel: string;
   onSave: (values: PlannerFormValues) => void;
   onDelete?: () => void;
-  // Date the form picker starts on for new entries. Defaults to today.
-  defaultDate?: string;
+  // Direction picked by the caller for new entries — Add Income vs Add
+  // Expense buttons each route here with a different defaultDirection.
+  defaultDirection?: Direction;
 };
 
 export default function PlannerForm({
   initial,
+  budgetId,
   saveLabel,
   onSave,
   onDelete,
-  defaultDate,
+  defaultDirection = "expense",
 }: Props) {
-  const initialDirection: Direction =
-    initial && initial.amount > 0 ? "income" : "expense";
+  const initialDirection: Direction = initial
+    ? initial.amount > 0
+      ? "income"
+      : "expense"
+    : defaultDirection;
 
   const [direction, setDirection] = useState<Direction>(initialDirection);
   const [label, setLabel] = useState<string>(initial?.label ?? "");
   const [amount, setAmount] = useState<string>(
     initial ? Math.abs(initial.amount).toString() : "",
   );
-  const [date, setDate] = useState<string>(
-    initial?.date ?? defaultDate ?? todayIso(),
-  );
+  const [hasDate, setHasDate] = useState<boolean>(Boolean(initial?.date));
+  const [date, setDate] = useState<string>(initial?.date ?? "");
+  const [paid, setPaid] = useState<boolean>(Boolean(initial?.paid));
 
   const valid = label.trim() !== "" && parseFloat(amount) > 0;
 
@@ -51,7 +55,13 @@ export default function PlannerForm({
     if (!valid) return;
     const magnitude = parseFloat(amount);
     const signed = direction === "income" ? magnitude : -magnitude;
-    onSave({ label: label.trim(), amount: signed, date });
+    onSave({
+      budgetId,
+      label: label.trim(),
+      amount: signed,
+      date: hasDate && date ? date : undefined,
+      paid: paid || undefined,
+    });
   }
 
   return (
@@ -99,13 +109,38 @@ export default function PlannerForm({
         </FormRow>
 
         <FormRow label="Date" htmlFor="planner-date">
-          <TextInput
-            id="planner-date"
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            required
-          />
+          <span className="flex items-center justify-end gap-2">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-fg/55">
+              <input
+                type="checkbox"
+                checked={hasDate}
+                onChange={(e) => setHasDate(e.target.checked)}
+                className="accent-accent"
+              />
+              Set
+            </label>
+            {hasDate && (
+              <TextInput
+                id="planner-date"
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="max-w-[160px]"
+              />
+            )}
+          </span>
+        </FormRow>
+
+        <FormRow label="Paid" htmlFor="planner-paid">
+          <span className="flex items-center justify-end">
+            <input
+              id="planner-paid"
+              type="checkbox"
+              checked={paid}
+              onChange={(e) => setPaid(e.target.checked)}
+              className="h-5 w-5 accent-accent"
+            />
+          </span>
         </FormRow>
       </FormGroup>
 
