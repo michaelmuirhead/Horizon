@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  carryForwardBalance,
   groupEntriesByDay,
   summarizeEntries,
   type PlannerEntry,
@@ -49,6 +50,14 @@ describe("groupEntriesByDay", () => {
     expect(groups[1].rows.map((r) => r.running)).toEqual([2000, 1200]);
   });
 
+  it("seeds the running balance from openingBalance", () => {
+    const groups = groupEntriesByDay(entries, 500);
+    // May 1 first row was 2000; with +500 carry it should be 2500.
+    expect(groups[1].rows[0].running).toBe(2500);
+    // Final row of the newest day shows the carried-through total.
+    expect(groups[0].rows.at(-1)?.running).toBe(1600);
+  });
+
   it("reflects a swapped within-day order in the running balance", () => {
     // Swap c ↔ e to mimic a drag: e now leads May 3, then d, then c.
     const swapped: PlannerEntry[] = [
@@ -61,5 +70,27 @@ describe("groupEntriesByDay", () => {
     const groups = groupEntriesByDay(swapped);
     expect(groups[0].rows.map((r) => r.entry.id)).toEqual(["e", "d", "c"]);
     expect(groups[0].rows.map((r) => r.running)).toEqual([1225, 1220, 1100]);
+  });
+});
+
+describe("carryForwardBalance", () => {
+  const acrossMonths: PlannerEntry[] = [
+    { id: "1", label: "April pay", amount: 3000, date: "2026-04-30" },
+    { id: "2", label: "April rent", amount: -800, date: "2026-04-01" },
+    { id: "3", label: "May coffee", amount: -5, date: "2026-05-02" },
+    { id: "4", label: "June bonus", amount: 200, date: "2026-06-15" },
+  ];
+
+  it("sums every entry strictly before the first of the month", () => {
+    expect(carryForwardBalance(acrossMonths, "2026-05")).toBe(2200);
+  });
+
+  it("returns 0 when no prior entries exist", () => {
+    expect(carryForwardBalance(acrossMonths, "2026-04")).toBe(0);
+  });
+
+  it("includes both prior months when looking at June", () => {
+    // Apr net 2200, May −5; carry into June is 2195.
+    expect(carryForwardBalance(acrossMonths, "2026-06")).toBe(2195);
   });
 });

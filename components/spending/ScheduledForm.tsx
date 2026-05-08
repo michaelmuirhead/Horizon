@@ -31,8 +31,24 @@ function detectDirection(
   return amount > 0 ? "inflow" : "outflow";
 }
 
+// Optional prefill for the "new scheduled" flow. Used when promoting a
+// record from elsewhere (e.g. a Planner entry) where we know the amount,
+// label, and date but not the category/account/cadence yet. Ignored
+// entirely when `initial` is passed — that path is editing an existing
+// scheduled transaction.
+export type ScheduledFormSeed = {
+  // Signed amount. The form derives direction (inflow / outflow) from
+  // sign and stores its own positive magnitude.
+  amount?: number;
+  // Maps onto the payee field for the prefill — the planner uses a
+  // generic "label" but for scheduled transactions that's the payee.
+  payee?: string;
+  nextDate?: string;
+};
+
 type Props = {
   initial?: ScheduledTransaction;
+  seed?: ScheduledFormSeed;
   saveLabel: string;
   onSave: (values: ScheduledFormValues) => void;
   onDelete?: () => void;
@@ -40,6 +56,7 @@ type Props = {
 
 export default function ScheduledForm({
   initial,
+  seed,
   saveLabel,
   onSave,
   onDelete,
@@ -60,7 +77,11 @@ export default function ScheduledForm({
   const initialDirection: Direction =
     initial && initial.kind !== "transfer"
       ? detectDirection(initial.amount, initial.isReadyToAssign)
-      : "outflow";
+      : seed && seed.amount !== undefined
+        ? seed.amount > 0
+          ? "inflow"
+          : "outflow"
+        : "outflow";
   const initialAccountId =
     initial && initial.kind !== "transfer"
       ? (accounts.find((a) => a.name === initial.account)?.id ??
@@ -71,7 +92,9 @@ export default function ScheduledForm({
   const [direction, setDirection] = useState<Direction>(initialDirection);
   const [accountId, setAccountId] = useState<string>(initialAccountId);
   const [payee, setPayee] = useState<string>(
-    initial && initial.kind !== "transfer" ? initial.payee : "",
+    initial && initial.kind !== "transfer"
+      ? initial.payee
+      : (seed?.payee ?? ""),
   );
   const [category, setCategory] = useState<string>(
     initial && initial.kind !== "transfer" && !initial.isReadyToAssign
@@ -100,10 +123,14 @@ export default function ScheduledForm({
     initial?.cadence ?? "monthly",
   );
   const [nextDate, setNextDate] = useState<string>(
-    initial?.nextDate ?? todayIso(),
+    initial?.nextDate ?? seed?.nextDate ?? todayIso(),
   );
   const [amount, setAmount] = useState<string>(
-    initial ? Math.abs(initial.amount).toString() : "",
+    initial
+      ? Math.abs(initial.amount).toString()
+      : seed?.amount !== undefined
+        ? Math.abs(seed.amount).toString()
+        : "",
   );
   const [memo, setMemo] = useState<string>(initial?.memo ?? "");
 
