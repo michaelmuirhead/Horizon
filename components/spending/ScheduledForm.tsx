@@ -32,18 +32,21 @@ function detectDirection(
 }
 
 // Optional prefill for the "new scheduled" flow. Used when promoting a
-// record from elsewhere (e.g. a Planner entry) where we know the amount,
-// label, and date but not the category/account/cadence yet. Ignored
-// entirely when `initial` is passed — that path is editing an existing
-// scheduled transaction.
+// record from elsewhere (e.g. a Planner entry, a detected subscription)
+// where we know some of the fields but not all. Ignored entirely when
+// `initial` is passed — that path is editing an existing record.
 export type ScheduledFormSeed = {
   // Signed amount. The form derives direction (inflow / outflow) from
   // sign and stores its own positive magnitude.
   amount?: number;
-  // Maps onto the payee field for the prefill — the planner uses a
-  // generic "label" but for scheduled transactions that's the payee.
+  // Maps onto the payee field for the prefill — callers using "label"
+  // (planner) and callers using "payee" (subscriptions) both land here.
   payee?: string;
   nextDate?: string;
+  // Pre-selected category name. Falls back to the form's first category
+  // option when missing or unknown.
+  category?: string;
+  cadence?: ScheduledCadence;
 };
 
 type Props = {
@@ -96,11 +99,15 @@ export default function ScheduledForm({
       ? initial.payee
       : (seed?.payee ?? ""),
   );
-  const [category, setCategory] = useState<string>(
-    initial && initial.kind !== "transfer" && !initial.isReadyToAssign
-      ? initial.category
-      : (categoryNames[0] ?? ""),
-  );
+  const [category, setCategory] = useState<string>(() => {
+    if (initial && initial.kind !== "transfer" && !initial.isReadyToAssign) {
+      return initial.category;
+    }
+    if (seed?.category && categoryNames.includes(seed.category)) {
+      return seed.category;
+    }
+    return categoryNames[0] ?? "";
+  });
 
   // Transfer-only fields
   const [fromAccountId, setFromAccountId] = useState<string>(
@@ -120,7 +127,7 @@ export default function ScheduledForm({
 
   // Common fields
   const [cadence, setCadence] = useState<ScheduledCadence>(
-    initial?.cadence ?? "monthly",
+    initial?.cadence ?? seed?.cadence ?? "monthly",
   );
   const [nextDate, setNextDate] = useState<string>(
     initial?.nextDate ?? seed?.nextDate ?? todayIso(),

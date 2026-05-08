@@ -7,6 +7,14 @@ import ScheduledForm, {
   type ScheduledFormSeed,
 } from "@/components/spending/ScheduledForm";
 import { useHorizonStore } from "@/components/store/HorizonStore";
+import type { ScheduledCadence } from "@/lib/scheduled";
+
+const CADENCES: ScheduledCadence[] = [
+  "weekly",
+  "biweekly",
+  "monthly",
+  "yearly",
+];
 
 export default function NewScheduledPage() {
   return (
@@ -21,19 +29,26 @@ function NewScheduled() {
   const searchParams = useSearchParams();
   const { addScheduled } = useHorizonStore();
 
-  // Optional prefill via query string — used by the Planner page when
-  // promoting an entry to a recurring scheduled transaction.
+  // Optional prefill via query string — used by the Planner promotion
+  // flow and by "Track" on the Subscriptions page.
   const labelParam = searchParams.get("label") ?? "";
   const amountParam = searchParams.get("amount");
   const dateParam = searchParams.get("date") ?? "";
+  const categoryParam = searchParams.get("category") ?? "";
+  const cadenceParam = searchParams.get("cadence") ?? "";
   const fromParam = searchParams.get("from") ?? "";
 
   const seed: ScheduledFormSeed | undefined = (() => {
     const parsedAmount = amountParam !== null ? Number(amountParam) : NaN;
+    const cadence = (CADENCES as string[]).includes(cadenceParam)
+      ? (cadenceParam as ScheduledCadence)
+      : undefined;
     if (
       labelParam === "" &&
       !Number.isFinite(parsedAmount) &&
-      dateParam === ""
+      dateParam === "" &&
+      categoryParam === "" &&
+      !cadence
     ) {
       return undefined;
     }
@@ -41,6 +56,8 @@ function NewScheduled() {
       payee: labelParam || undefined,
       amount: Number.isFinite(parsedAmount) ? parsedAmount : undefined,
       nextDate: /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : undefined,
+      category: categoryParam || undefined,
+      cadence,
     };
   })();
 
