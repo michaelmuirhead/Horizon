@@ -8,15 +8,21 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
-const TOUCH_LONG_PRESS_MS = 280;
-// If the user moves their finger by more than this many pixels before
-// the long-press fires, we treat it as a scroll attempt and cancel
-// arming so the grip doesn't accidentally hijack a scroll.
-const ARM_CANCEL_PX = 8;
 // CSS transition applied to non-source rows so they glide in and out as
 // the user drags, instead of snapping. The source row uses no transition
 // so its position tracks the pointer 1:1.
 const SHIFT_TRANSITION = "transform 200ms ease-out";
+
+// Inline styles set on the grip button. iOS Safari needs the -webkit-
+// prefixed callout/user-select rules to suppress the long-press magnifier
+// and text-selection callout, both of which can otherwise abort the
+// gesture mid-drag with a pointercancel.
+const GRIP_STYLE: CSSProperties = {
+  touchAction: "none",
+  WebkitTouchCallout: "none",
+  WebkitUserSelect: "none",
+  userSelect: "none",
+};
 
 type RowGeom = {
   id: string;
@@ -58,24 +64,20 @@ type Options = {
   ) => void;
 };
 
-// Pointer-events powered drag with live row-shift previews. Mouse drags
-// arm immediately; touch requires a short hold so the page can still be
-// scrolled normally. Geometry is snapshotted at arm time so the layout
-// math stays stable across re-renders triggered by intermediate drag
-// state.
+// Pointer-events powered drag with live row-shift previews. The grip is
+// a dedicated 28px handle so we arm immediately on pointerdown for both
+// mouse and touch — long-press timers were unreliable on iOS (Safari
+// frequently fires `pointercancel` mid-wait when it suspects a scroll,
+// killing the timer). A tap-without-movement is harmless: target_reduced
+// equals sourceIndex so onPointerUp dispatches no reorder.
 export function usePlannerReorderDrag({ onReorder }: Options) {
   const [view, setView] = useState<DragView | null>(null);
 
-  const armTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const armedRef = useRef(false);
   const geomRef = useRef<DragGeom | null>(null);
   const targetReducedRef = useRef<number>(-1);
 
   const endGesture = useCallback(() => {
-    if (armTimerRef.current !== null) {
-      clearTimeout(armTimerRef.current);
-      armTimerRef.current = null;
-    }
     armedRef.current = false;
     geomRef.current = null;
     targetReducedRef.current = -1;
@@ -152,9 +154,13 @@ export function usePlannerReorderDrag({ onReorder }: Options) {
 
   const gripProps = useCallback(
     (id: string, date: string) => ({
-      style: { touchAction: "none" } as CSSProperties,
+      style: GRIP_STYLE,
       onPointerDown(e: ReactPointerEvent<HTMLElement>) {
         if (e.pointerType === "mouse" && e.button !== 0) return;
+        // preventDefault tells iOS Safari "this gesture is mine" so it
+        // doesn't try to start a system scroll/select and pointercancel
+        // us mid-drag.
+        e.preventDefault();
         const grip = e.currentTarget;
         try {
           grip.setPointerCapture(e.pointerId);
@@ -162,57 +168,30 @@ export function usePlannerReorderDrag({ onReorder }: Options) {
           // setPointerCapture can throw if the pointer's already gone;
           // we still try to proceed with the gesture.
         }
-        armedRef.current = false;
-
-        const arm = () => {
-          armTimerRef.current = null;
-          const geom = captureGeometry(grip, id, date, e.clientY);
-          if (!geom) return;
-          armedRef.current = true;
-          const next = computeView(0);
-          if (next) setView(next);
-          if (typeof navigator !== "undefined" && "vibrate" in navigator) {
-            try {
-              navigator.vibrate(20);
-            } catch {
-              // Vibration is gated behind user-gesture rules in some
-              // browsers; a silent failure is fine.
-            }
+        const geom = captureGeometry(grip, id, date, e.clientY);
+        if (!geom) return;
+        armedRef.current = true;
+        const next = computeView(0);
+        if (next) setView(next);
+        if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+          try {
+            navigator.vibrate(15);
+          } catch {
+            // Vibration is gated behind user-gesture rules in some
+            // browsers; a silent failure is fine. (iOS Safari has no
+            // vibrate API at all — try/catch covers the missing fn.)
           }
-        };
-
-        if (e.pointerType === "touch") {
-          // Stash the start point on the geom ref optimistically so we
-          // can cancel arming if the user moves too far before the
-          // long-press fires.
-          geomRef.current = {
-            sourceId: id,
-            date,
-            rows: [],
-            sourceIndex: -1,
-            sourceHeight: 0,
-            startY: e.clientY,
-          };
-          armTimerRef.current = setTimeout(arm, TOUCH_LONG_PRESS_MS);
-        } else {
-          arm();
         }
       },
       onPointerMove(e: ReactPointerEvent<HTMLElement>) {
         const geom = geomRef.current;
-        if (!geom) return;
-        if (!armedRef.current) {
-          if (Math.abs(e.clientY - geom.startY) > ARM_CANCEL_PX) {
-            endGesture();
-          }
-          return;
-        }
+        if (!armedRef.current || !geom) return;
         const next = computeView(e.clientY - geom.startY);
         if (next) setView(next);
       },
       onPointerUp() {
         const geom = geomRef.current;
-        if (!armedRef.current || !geom || geom.sourceIndex < 0) {
+        if (!armedRef.current || !geom) {
           endGesture();
           return;
         }
