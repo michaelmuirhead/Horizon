@@ -3,15 +3,27 @@
 import Link from "next/link";
 import { Pencil, Pin, PlusCircle, Target } from "lucide-react";
 import {
+  cadenceShortLabel,
   ccPaymentRouting,
   categoryAvailable,
   categoryUnderfundedForMonth,
   findCategory,
+  formatTargetDate,
   getAssigned,
   monthlyNeedForCategory,
+  type CategoryTarget,
 } from "@/lib/budget";
 import { formatCurrency } from "@/lib/format";
 import { useHorizonStore } from "@/components/store/HorizonStore";
+
+// Whole calendar months between the two YYYY-MM keys (inclusive). Mirrors
+// the `monthsUntilDueDate` helper in lib/budget but exposed as YYYY-MM
+// since the Inspector only knows the active month key.
+function monthsBetween(monthKey: string, dueIso: string): number {
+  const [dueY, dueM] = dueIso.split("-").map(Number);
+  const [curY, curM] = monthKey.split("-").map(Number);
+  return Math.max(1, (dueY - curY) * 12 + (dueM - curM));
+}
 
 const TX_LIMIT = 12;
 
@@ -230,15 +242,13 @@ export default function CategoryInspector({
           target.paused ? (
             <p className="mt-2 text-sm text-fg/55">Paused.</p>
           ) : (
-            <p
-              className={`mt-2 text-sm tabular-nums ${
-                short > 0 ? "text-amber-400" : "text-fg/70"
-              }`}
-            >
-              {short > 0
-                ? `${formatCurrency(short)} short of ${formatCurrency(need)} this month`
-                : `Funded for this month (${formatCurrency(need)})`}
-            </p>
+            <TargetSummary
+              target={target}
+              monthlyNeed={need}
+              shortThisMonth={short}
+              assignedThisMonth={assigned}
+              monthKey={monthKey}
+            />
           )
         ) : (
           <p className="mt-2 text-sm text-fg/55">
@@ -293,6 +303,81 @@ export default function CategoryInspector({
           </Link>
         )}
       </div>
+    </div>
+  );
+}
+
+function TargetSummary({
+  target,
+  monthlyNeed,
+  shortThisMonth,
+  assignedThisMonth,
+  monthKey,
+}: {
+  target: CategoryTarget;
+  monthlyNeed: number;
+  shortThisMonth: number;
+  assignedThisMonth: number;
+  monthKey: string;
+}) {
+  const onTrack = shortThisMonth <= 0;
+  const reachedEarly = monthlyNeed <= 0;
+
+  // Headline emphasises the per-month figure so the user can see at a
+  // glance how much they need to assign this month — matching the YNAB
+  // "Need this month" framing.
+  const headline = reachedEarly
+    ? "Goal already met for this month"
+    : `Need ${formatCurrency(monthlyNeed)} this month`;
+  const headlineTone = reachedEarly
+    ? "text-mint"
+    : onTrack
+      ? "text-emerald-400"
+      : "text-amber-400";
+
+  let context: string | null = null;
+  if (target.kind === "by-date" && !reachedEarly) {
+    const monthsLeft = monthsBetween(monthKey, target.dueDate);
+    const due = formatTargetDate(target.dueDate);
+    context =
+      monthsLeft === 1
+        ? `Last month to hit ${formatCurrency(target.amount)} by ${due}`
+        : `${monthsLeft} months left to hit ${formatCurrency(target.amount)} by ${due}`;
+  } else if (target.kind === "refill") {
+    context = `Refill the envelope to ${formatCurrency(target.amount)} each month`;
+  } else if (target.kind === "set-aside") {
+    context = `Set aside ${formatCurrency(target.amount)} per ${cadenceShortLabel(
+      target.cadence,
+    )}`;
+  } else if (target.kind === "spending") {
+    context = `Spending limit of ${formatCurrency(target.amount)} this month`;
+  }
+
+  // Spread of the per-month math: how much is in the assignment now and how
+  // far it is from the target. Keeps the headline focused on the action.
+  const detail = reachedEarly
+    ? `Assigned ${formatCurrency(assignedThisMonth)} this month — already covers the goal.`
+    : onTrack
+      ? `Assigned ${formatCurrency(assignedThisMonth)} this month, meeting the ${formatCurrency(monthlyNeed)} need.`
+      : `Assigned ${formatCurrency(assignedThisMonth)} of ${formatCurrency(monthlyNeed)} so far — ${formatCurrency(shortThisMonth)} short.`;
+
+  const autoAdjustNote =
+    target.kind === "by-date"
+      ? "This number rebalances each month: missing a month bumps it up, getting ahead trims it down."
+      : target.kind === "refill"
+        ? "Refill grows when you spend out of the envelope and shrinks when carryover covers next month."
+        : null;
+
+  return (
+    <div className="mt-2 space-y-1.5">
+      <p className={`text-base font-extrabold tabular-nums ${headlineTone}`}>
+        {headline}
+      </p>
+      {context && <p className="text-xs text-fg/65">{context}</p>}
+      <p className="text-xs text-fg/55 tabular-nums">{detail}</p>
+      {autoAdjustNote && (
+        <p className="text-[11px] text-fg/45 italic">{autoAdjustNote}</p>
+      )}
     </div>
   );
 }

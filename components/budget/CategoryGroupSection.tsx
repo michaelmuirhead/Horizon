@@ -12,6 +12,7 @@ import {
   formatTargetDate,
   getAssigned,
   groupTotals,
+  monthlyNeedForCategory,
 } from "@/lib/budget";
 import { formatCurrency } from "@/lib/format";
 import { useHorizonStore } from "@/components/store/HorizonStore";
@@ -49,15 +50,23 @@ function targetSubtitle(
         };
   }
   if (target.kind === "refill") {
-    return underfunded > 0
-      ? {
-          text: `${formatCurrency(underfunded)} short to refill`,
-          underfunded: true,
-        }
-      : {
-          text: `Refilled · ${formatCurrency(target.amount)}/mo`,
-          underfunded: false,
-        };
+    const need = monthlyNeedForCategory(
+      category,
+      target,
+      ctx.assignments,
+      ctx.transactions,
+      ctx.monthKey,
+    );
+    if (underfunded > 0) {
+      return {
+        text: `Need ${formatCurrency(need)}/mo · ${formatCurrency(underfunded)} short to refill`,
+        underfunded: true,
+      };
+    }
+    return {
+      text: `Refilled · ${formatCurrency(target.amount)}/mo`,
+      underfunded: false,
+    };
   }
   if (target.kind === "spending") {
     // Spent so far this month, by combining splits + non-split outflows.
@@ -84,12 +93,33 @@ function targetSubtitle(
     };
   }
   const due = formatTargetDate(target.dueDate);
-  return underfunded > 0
-    ? {
-        text: `${formatCurrency(underfunded)} short for ${due}`,
-        underfunded: true,
-      }
-    : { text: `On track for ${due}`, underfunded: false };
+  const need = monthlyNeedForCategory(
+    category,
+    target,
+    ctx.assignments,
+    ctx.transactions,
+    ctx.monthKey,
+  );
+  // Three states for a sinking-fund (by-date) target:
+  //   1. Already saved enough at start of month — `need` = 0.
+  //   2. This month's assignment hasn't covered the per-month catch-up yet.
+  //   3. Caught up for the month — assigned ≥ need.
+  // The per-month figure auto-grows when prior months are missed (because
+  // `categoryAvailableAtStart` carries less forward) and shrinks when the
+  // user assigns more than required (next month's `startAvailable` is higher).
+  if (need <= 0) {
+    return { text: `Saved · ready by ${due}`, underfunded: false };
+  }
+  if (underfunded > 0) {
+    return {
+      text: `Need ${formatCurrency(need)}/mo · ${formatCurrency(underfunded)} short for ${due}`,
+      underfunded: true,
+    };
+  }
+  return {
+    text: `Need ${formatCurrency(need)}/mo for ${due} · funded`,
+    underfunded: false,
+  };
 }
 
 export default function CategoryGroupSection({
