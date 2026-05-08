@@ -28,11 +28,11 @@ describe("summarizeEntries", () => {
 });
 
 describe("groupEntriesByDay", () => {
-  it("groups by date, newest day first, with rows newest-first within day", () => {
+  it("groups by date newest-day first, preserving input order within a day", () => {
     const groups = groupEntriesByDay(entries);
     expect(groups.map((g) => g.date)).toEqual(["2026-05-03", "2026-05-01"]);
-    expect(groups[0].rows.map((r) => r.entry.id)).toEqual(["e", "d", "c"]);
-    expect(groups[1].rows.map((r) => r.entry.id)).toEqual(["b", "a"]);
+    expect(groups[0].rows.map((r) => r.entry.id)).toEqual(["c", "d", "e"]);
+    expect(groups[1].rows.map((r) => r.entry.id)).toEqual(["a", "b"]);
   });
 
   it("sums each day's net regardless of sign", () => {
@@ -41,11 +41,25 @@ describe("groupEntriesByDay", () => {
     expect(groups[1].dayTotal).toBe(1200);
   });
 
-  it("walks running balance chronologically across day boundaries", () => {
+  it("walks running balance in the supplied within-day order", () => {
     const groups = groupEntriesByDay(entries);
-    // Newest day, displayed newest-first: e (1100), d (1075), c (1080).
-    expect(groups[0].rows.map((r) => r.running)).toEqual([1100, 1075, 1080]);
-    // Oldest day: b (1200), a (2000) — newest of that day on top.
-    expect(groups[1].rows.map((r) => r.running)).toEqual([1200, 2000]);
+    // May 3 in input order: c (1080), d (1075), e (1100).
+    expect(groups[0].rows.map((r) => r.running)).toEqual([1080, 1075, 1100]);
+    // May 1 in input order: a (2000), b (1200).
+    expect(groups[1].rows.map((r) => r.running)).toEqual([2000, 1200]);
+  });
+
+  it("reflects a swapped within-day order in the running balance", () => {
+    // Swap c ↔ e to mimic a drag: e now leads May 3, then d, then c.
+    const swapped: PlannerEntry[] = [
+      entries[0],
+      entries[1],
+      entries[4],
+      entries[3],
+      entries[2],
+    ];
+    const groups = groupEntriesByDay(swapped);
+    expect(groups[0].rows.map((r) => r.entry.id)).toEqual(["e", "d", "c"]);
+    expect(groups[0].rows.map((r) => r.running)).toEqual([1225, 1220, 1100]);
   });
 });

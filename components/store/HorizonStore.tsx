@@ -294,6 +294,7 @@ type Action =
   | { type: "add_planner_entry"; entry: PlannerEntry }
   | { type: "update_planner_entry"; entry: PlannerEntry }
   | { type: "delete_planner_entry"; id: string }
+  | { type: "reorder_planner_entry"; id: string; targetId: string }
   | { type: "add_scheduled"; scheduled: ScheduledTransaction }
   | { type: "update_scheduled"; scheduled: ScheduledTransaction }
   | { type: "delete_scheduled"; id: string }
@@ -1078,6 +1079,25 @@ function reducer(state: State, action: Action): State {
         ...state,
         plannerEntries: state.plannerEntries.filter((e) => e.id !== action.id),
       };
+    case "reorder_planner_entry": {
+      // Within-day reorder only: cross-day drags would silently change the
+      // entry's date, which is more "move" than "reorder" — out of scope
+      // for the drag handle on the planner page.
+      if (action.id === action.targetId) return state;
+      const sourceIdx = state.plannerEntries.findIndex(
+        (e) => e.id === action.id,
+      );
+      const target = state.plannerEntries.find((e) => e.id === action.targetId);
+      if (sourceIdx < 0 || !target) return state;
+      const source = state.plannerEntries[sourceIdx];
+      if (source.date !== target.date) return state;
+      const next = state.plannerEntries.slice();
+      next.splice(sourceIdx, 1);
+      const targetIdx = next.findIndex((e) => e.id === action.targetId);
+      if (targetIdx < 0) return state;
+      next.splice(targetIdx, 0, source);
+      return { ...state, plannerEntries: next };
+    }
     case "add_scheduled":
       return {
         ...state,
@@ -1350,6 +1370,7 @@ type Ctx = {
   addPlannerEntry: (entry: Omit<PlannerEntry, "id">) => void;
   updatePlannerEntry: (entry: PlannerEntry) => void;
   deletePlannerEntry: (id: string) => void;
+  reorderPlannerEntry: (id: string, targetId: string) => void;
   addScheduled: (s: ScheduledInput) => void;
   updateScheduled: (s: ScheduledTransaction) => void;
   deleteScheduled: (id: string) => void;
@@ -2140,6 +2161,10 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "delete_planner_entry", id });
   }, []);
 
+  const reorderPlannerEntry = useCallback((id: string, targetId: string) => {
+    dispatch({ type: "reorder_planner_entry", id, targetId });
+  }, []);
+
   const addScheduled = useCallback(
     (scheduled: ScheduledInput) => {
       dispatch({
@@ -2659,6 +2684,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       addPlannerEntry,
       updatePlannerEntry,
       deletePlannerEntry,
+      reorderPlannerEntry,
       addScheduled,
       updateScheduled,
       deleteScheduled,
@@ -2758,6 +2784,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       addPlannerEntry,
       updatePlannerEntry,
       deletePlannerEntry,
+      reorderPlannerEntry,
       addScheduled,
       updateScheduled,
       deleteScheduled,

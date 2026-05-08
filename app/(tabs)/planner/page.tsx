@@ -1,8 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { useMemo, useState, type DragEvent } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  GripVertical,
+  Plus,
+} from "lucide-react";
 import PageTitle from "@/components/layout/PageTitle";
 import PlannerEntryRow from "@/components/planner/PlannerEntryRow";
 import PlannerFAB from "@/components/planner/PlannerFAB";
@@ -57,12 +62,57 @@ function defaultDateForMonth(monthKey: string): string {
   return `${monthKey}-01`;
 }
 
+type DragState = {
+  id: string;
+  // Captured up front so onDragOver can refuse drops on a different day
+  // without re-deriving the source's date for every hover frame.
+  date: string;
+};
+
 export default function PlannerPage() {
-  const { plannerEntries } = useHorizonStore();
+  const { plannerEntries, reorderPlannerEntry } = useHorizonStore();
   const now = new Date();
   const [monthKey, setMonthKey] = useState<string>(() =>
     monthKeyOf(now.getFullYear(), now.getMonth()),
   );
+  const [drag, setDrag] = useState<DragState | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  function handleDragStart(id: string, date: string) {
+    return (e: DragEvent<HTMLElement>) => {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", id);
+      setDrag({ id, date });
+    };
+  }
+
+  function handleDragOver(targetId: string, targetDate: string) {
+    return (e: DragEvent<HTMLElement>) => {
+      if (!drag) return;
+      // Within-day reorder only — refuse the drop visually so users get
+      // a clear "no" cursor instead of a silent no-op on release.
+      if (drag.date !== targetDate) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      if (dragOverId !== targetId) setDragOverId(targetId);
+    };
+  }
+
+  function handleDrop(targetId: string, targetDate: string) {
+    return (e: DragEvent<HTMLElement>) => {
+      if (!drag) return;
+      if (drag.date !== targetDate) return;
+      e.preventDefault();
+      if (drag.id !== targetId) reorderPlannerEntry(drag.id, targetId);
+      setDrag(null);
+      setDragOverId(null);
+    };
+  }
+
+  function handleDragEnd() {
+    setDrag(null);
+    setDragOverId(null);
+  }
 
   const monthEntries = useMemo(
     () =>
@@ -225,11 +275,31 @@ export default function PlannerPage() {
                 </header>
                 <ul className="divide-y divide-fg/5 border-y border-fg/5">
                   {group.rows.map(({ entry, running }) => (
-                    <li key={entry.id}>
+                    <li
+                      key={entry.id}
+                      onDragOver={handleDragOver(entry.id, group.date)}
+                      onDrop={handleDrop(entry.id, group.date)}
+                    >
                       <PlannerEntryRow
                         entry={entry}
                         runningBalance={running}
                         showDate={false}
+                        isDragging={drag?.id === entry.id}
+                        isDropTarget={
+                          dragOverId === entry.id && drag?.id !== entry.id
+                        }
+                        dragHandle={
+                          <button
+                            type="button"
+                            aria-label={`Reorder ${entry.label}`}
+                            draggable
+                            onDragStart={handleDragStart(entry.id, entry.date)}
+                            onDragEnd={handleDragEnd}
+                            className="grid w-7 shrink-0 place-items-center bg-card text-fg/30 cursor-grab active:cursor-grabbing"
+                          >
+                            <GripVertical size={14} />
+                          </button>
+                        }
                       />
                     </li>
                   ))}
