@@ -217,6 +217,87 @@ describe("monthlyNeedForCategory", () => {
       categoryUnderfundedForMonth(groceries, target, {}, [], "2026-05"),
     ).toBe(0);
   });
+
+  // Surface that the by-date and refill targets feeding the Budget tab
+  // self-correct: missed months grow the per-month need, over-funded
+  // months shrink it.
+  it("by-date grows the monthly need when prior months are missed", () => {
+    const target: CategoryTarget = {
+      kind: "by-date",
+      amount: 1200,
+      dueDate: "2026-12-01",
+    };
+    // Starting point in May — 7 months between May and December.
+    const startNeed = monthlyNeedForCategory(
+      groceries,
+      target,
+      {},
+      [],
+      "2026-05",
+    );
+    expect(startNeed).toBeCloseTo(1200 / 7, 5);
+    // Skip May (assign nothing) and re-evaluate June. End-of-May balance
+    // is still 0, so 1200 spread over the remaining 6 months → $200/mo.
+    const juneNeed = monthlyNeedForCategory(
+      groceries,
+      target,
+      {},
+      [],
+      "2026-06",
+    );
+    expect(juneNeed).toBeCloseTo(1200 / 6, 5);
+    expect(juneNeed).toBeGreaterThan(startNeed);
+  });
+
+  it("by-date shrinks the monthly need when the user gets ahead", () => {
+    const target: CategoryTarget = {
+      kind: "by-date",
+      amount: 1200,
+      dueDate: "2026-12-01",
+    };
+    // Assign $400 in May (well above the May "need"). End-of-May balance
+    // carries 400 forward → June only has to spread $800 over 6 months.
+    const ahead = setAssigned({}, "2026-05", "g", 400);
+    const juneNeed = monthlyNeedForCategory(
+      groceries,
+      target,
+      ahead,
+      [],
+      "2026-06",
+    );
+    expect(juneNeed).toBeCloseTo(800 / 6, 5);
+    expect(juneNeed).toBeLessThan(1200 / 6);
+  });
+
+  it("by-date drops to zero once the goal amount is already saved", () => {
+    const target: CategoryTarget = {
+      kind: "by-date",
+      amount: 500,
+      dueDate: "2026-12-01",
+    };
+    const fullyFunded = setAssigned({}, "2026-05", "g", 500);
+    const juneNeed = monthlyNeedForCategory(
+      groceries,
+      target,
+      fullyFunded,
+      [],
+      "2026-06",
+    );
+    expect(juneNeed).toBe(0);
+  });
+
+  it("refill catches up when the previous month was missed", () => {
+    const target: CategoryTarget = { kind: "refill", amount: 250 };
+    // No assignment in April → start-of-May available is 0 → need = 250.
+    expect(monthlyNeedForCategory(groceries, target, {}, [], "2026-05")).toBe(
+      250,
+    );
+    // Assigned $100 in April → start-of-May = $100 → need = 150.
+    const partial = setAssigned({}, "2026-04", "g", 100);
+    expect(
+      monthlyNeedForCategory(groceries, target, partial, [], "2026-05"),
+    ).toBe(150);
+  });
 });
 
 describe("ccPaymentRouting", () => {
