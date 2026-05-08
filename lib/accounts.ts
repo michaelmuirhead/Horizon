@@ -34,6 +34,12 @@ export type Account = {
   loanApr?: number; // annual percentage rate, e.g. 6.5 for 6.5%
   loanTermMonths?: number;
   loanOriginalPrincipal?: number;
+  // Generic debt terms used by the Debts list. For loans, `apr` falls back
+  // to `loanApr`; for credit cards there's no other source. `minimumPayment`
+  // is the user-stated monthly minimum. Both are optional — the Debts page
+  // surfaces missing values so the user can fill them in.
+  apr?: number;
+  minimumPayment?: number;
   // Investment account history of self-reported values. The most recent
   // entry's value is what `liveAccountBalance` returns when populated.
   // Net contributions (sum of transactions on this account) are tracked

@@ -251,6 +251,12 @@ type Action =
   | { type: "reorder_group"; groupId: string; targetIndex: number }
   | { type: "reorder_category"; categoryId: string; targetIndex: number }
   | { type: "set_account_note"; accountId: string; note: string }
+  | {
+      type: "set_account_debt_terms";
+      accountId: string;
+      apr: number | null;
+      minimumPayment: number | null;
+    }
   | { type: "add_planner_entry"; entry: PlannerEntry }
   | { type: "update_planner_entry"; entry: PlannerEntry }
   | { type: "delete_planner_entry"; id: string }
@@ -807,6 +813,28 @@ function reducer(state: State, action: Action): State {
         ),
       };
     }
+    case "set_account_debt_terms": {
+      return {
+        ...state,
+        accounts: state.accounts.map((a) => {
+          if (a.id !== action.accountId) return a;
+          const { apr: _apr, minimumPayment: _min, ...rest } = a;
+          void _apr;
+          void _min;
+          const next: Account = { ...rest };
+          if (action.apr !== null && Number.isFinite(action.apr)) {
+            next.apr = action.apr;
+          }
+          if (
+            action.minimumPayment !== null &&
+            Number.isFinite(action.minimumPayment)
+          ) {
+            next.minimumPayment = action.minimumPayment;
+          }
+          return next;
+        }),
+      };
+    }
     case "reorder_group": {
       const idx = state.groups.findIndex((g) => g.id === action.groupId);
       if (idx < 0) return state;
@@ -1126,6 +1154,10 @@ type Ctx = {
   reorderGroup: (groupId: string, targetIndex: number) => void;
   reorderCategory: (categoryId: string, targetIndex: number) => void;
   setAccountNote: (accountId: string, note: string) => void;
+  setAccountDebtTerms: (
+    accountId: string,
+    terms: { apr: number | null; minimumPayment: number | null },
+  ) => void;
   addPlannerEntry: (entry: Omit<PlannerEntry, "id">) => void;
   updatePlannerEntry: (entry: PlannerEntry) => void;
   deletePlannerEntry: (id: string) => void;
@@ -1830,6 +1862,20 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
   const setAccountNote = useCallback((accountId: string, note: string) => {
     dispatch({ type: "set_account_note", accountId, note });
   }, []);
+  const setAccountDebtTerms = useCallback(
+    (
+      accountId: string,
+      terms: { apr: number | null; minimumPayment: number | null },
+    ) => {
+      dispatch({
+        type: "set_account_debt_terms",
+        accountId,
+        apr: terms.apr,
+        minimumPayment: terms.minimumPayment,
+      });
+    },
+    [],
+  );
 
   const addPlannerEntry = useCallback((entry: Omit<PlannerEntry, "id">) => {
     dispatch({
@@ -2353,6 +2399,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       reorderGroup,
       reorderCategory,
       setAccountNote,
+      setAccountDebtTerms,
       addPlannerEntry,
       updatePlannerEntry,
       deletePlannerEntry,
@@ -2445,6 +2492,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       reorderGroup,
       reorderCategory,
       setAccountNote,
+      setAccountDebtTerms,
       addPlannerEntry,
       updatePlannerEntry,
       deletePlannerEntry,

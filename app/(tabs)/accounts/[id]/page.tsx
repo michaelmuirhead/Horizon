@@ -10,8 +10,10 @@ import EditableText from "@/components/forms/EditableText";
 import NoteEditor from "@/components/forms/NoteEditor";
 import LoanSummaryCard from "@/components/accounts/LoanSummaryCard";
 import InvestmentSummaryCard from "@/components/accounts/InvestmentSummaryCard";
+import DebtTermsCard from "@/components/accounts/DebtTermsCard";
 import { useHorizonStore } from "@/components/store/HorizonStore";
 import {
+  LIABILITY_ACCOUNT_TYPES,
   accountTypeSingularLabels,
   clearedAccountBalance,
   liveAccountBalance,
@@ -112,6 +114,9 @@ export default function AccountDetailPage({
           />
         </div>
 
+        {LIABILITY_ACCOUNT_TYPES.has(account.type) && (
+          <DebtTermsCard account={account} />
+        )}
         {account.type === "loan" && <LoanSummaryCard account={account} />}
         {account.type === "investment" && <InvestmentSummaryCard account={account} />}
 

@@ -1,4 +1,4 @@
-import { Plus, MoreHorizontal, PlusCircle, Landmark } from "lucide-react";
+import { Plus, MoreHorizontal, PlusCircle, Landmark, Scale } from "lucide-react";
 import IconCapsule, { CapsuleButton } from "@/components/layout/IconCapsule";
 import PageTitle from "@/components/layout/PageTitle";
 import AccountsList from "@/components/accounts/AccountsList";
@@ -30,6 +30,11 @@ export default function AccountsPage() {
             Icon={PlusCircle}
             label="Add Account"
             href="/accounts/new"
+          />
+          <AccentActionButton
+            Icon={Scale}
+            label="Track Debts"
+            href="/accounts/debts"
           />
           <AccentActionButton Icon={Landmark} label="Manage Bank Connections" />
         </div>
