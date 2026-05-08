@@ -242,3 +242,228 @@ body {
   transform: translate(-50%, 0);
   outline: none;
 }
+
+/* ──────────────────────────────────────────────────────────────
+ * Bevel + Specular pill family.
+ *
+ * Every pill / capsule / progress fill in the app shares one
+ * recipe: a top→bottom 3-stop gradient (lighter top, base middle,
+ * darker bottom), an inset top highlight, an outer soft drop, and
+ * — on the larger pills — a single faint diagonal specular streak
+ * via ::before. color-mix() means each variant derives its stops
+ * from a single CSS variable, so the dark, light, and Pokemon
+ * themes all bevel correctly.
+ * ────────────────────────────────────────────────────────────── */
+
+.hz-pill {
+  position: relative;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--pill), white 14%) 0%,
+    var(--pill) 50%,
+    color-mix(in srgb, var(--pill), black 18%) 100%
+  );
+  color: var(--pill-text);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.18),
+    inset 0 0 0 1px rgb(255 255 255 / 0.05),
+    0 1px 0 rgb(0 0 0 / 0.5),
+    0 4px 10px rgb(0 0 0 / 0.35);
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.hz-pill::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    rgb(255 255 255 / 0.10) 48%,
+    transparent 60%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+.hz-pill > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* Compact pills (status chips, tags) skip the specular streak —
+ * at small sizes the streak reads as noise instead of polish. */
+.hz-pill-sm {
+  position: relative;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--pill), white 12%) 0%,
+    var(--pill) 60%,
+    color-mix(in srgb, var(--pill), black 14%) 100%
+  );
+  color: var(--pill-text);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.12),
+    inset 0 0 0 1px rgb(255 255 255 / 0.04),
+    0 1px 2px rgb(0 0 0 / 0.35);
+}
+
+.hz-pill-accent {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent), white 22%) 0%,
+    var(--accent) 50%,
+    color-mix(in srgb, var(--accent), black 22%) 100%
+  );
+  color: white;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.35),
+    inset 0 0 0 1px rgb(255 255 255 / 0.08),
+    0 1px 0 rgb(0 0 0 / 0.5),
+    0 6px 14px -2px rgb(var(--accent-rgb) / 0.45);
+}
+
+.hz-pill-mint {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--mint), white 22%) 0%,
+    var(--mint) 50%,
+    color-mix(in srgb, var(--mint), black 24%) 100%
+  );
+  color: color-mix(in srgb, var(--mint), black 65%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.45),
+    inset 0 0 0 1px rgb(255 255 255 / 0.10),
+    0 1px 0 rgb(0 0 0 / 0.4),
+    0 6px 14px -2px rgb(var(--mint-rgb) / 0.45);
+}
+
+.hz-pill-danger {
+  background: linear-gradient(180deg, #f1556c 0%, #d62a48 50%, #a91a36 100%);
+  color: white;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.30),
+    inset 0 0 0 1px rgb(255 255 255 / 0.08),
+    0 1px 0 rgb(0 0 0 / 0.5),
+    0 6px 14px -2px rgb(244 63 94 / 0.45);
+}
+
+.hz-pill-info {
+  background: linear-gradient(180deg, #38bdf8 0%, #0284c7 50%, #0369a1 100%);
+  color: white;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.30),
+    inset 0 0 0 1px rgb(255 255 255 / 0.08),
+    0 1px 0 rgb(0 0 0 / 0.5),
+    0 6px 14px -2px rgb(2 132 199 / 0.45);
+}
+
+.hz-pill-warm {
+  background: linear-gradient(180deg, #fbbf24 0%, #d97706 50%, #92400e 100%);
+  color: #1b1306;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.40),
+    inset 0 0 0 1px rgb(255 255 255 / 0.10),
+    0 1px 0 rgb(0 0 0 / 0.4),
+    0 6px 14px -2px rgb(217 119 6 / 0.40);
+}
+
+/* Capsule — shared by the budget toolbar split-button group, the
+ * bottom nav, the segmented controls, and the FAB. */
+.hz-capsule {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--card-elevated), white 6%),
+    color-mix(in srgb, var(--card-elevated), black 12%)
+  );
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.10),
+    inset 0 0 0 1px rgb(255 255 255 / 0.04),
+    0 4px 10px rgb(0 0 0 / 0.45);
+}
+
+/* Light-up state inside a capsule (active nav tab, active segmented). */
+.hz-capsule-active {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent), white 20%) 0%,
+    var(--accent) 100%
+  );
+  color: white;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.35),
+    inset 0 0 0 1px rgb(255 255 255 / 0.08),
+    0 4px 10px -2px rgb(var(--accent-rgb) / 0.45);
+}
+
+/* Sunken track for the capsule that holds the active pill — gives the
+ * active state something to "rise out of". */
+.hz-capsule-track {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--card-elevated), black 6%),
+    color-mix(in srgb, var(--card-elevated), black 18%)
+  );
+  box-shadow:
+    inset 0 1px 0 rgb(0 0 0 / 0.4),
+    inset 0 0 0 1px rgb(255 255 255 / 0.03);
+}
+
+/* Progress bar track (sunken) and fill (raised, glowing). */
+.hz-bar-track {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--card-elevated), black 12%),
+    var(--card-elevated)
+  );
+  box-shadow:
+    inset 0 1px 0 rgb(0 0 0 / 0.5),
+    inset 0 -1px 0 rgb(255 255 255 / 0.04);
+}
+
+.hz-bar-fill {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent), white 22%) 0%,
+    var(--accent) 50%,
+    color-mix(in srgb, var(--accent), black 22%) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.35),
+    0 0 12px -1px rgb(var(--accent-rgb) / 0.55);
+}
+
+.hz-bar-fill-mint {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--mint), white 22%) 0%,
+    var(--mint) 50%,
+    color-mix(in srgb, var(--mint), black 22%) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.45),
+    0 0 12px -1px rgb(var(--mint-rgb) / 0.55);
+}
+
+/* Account-icon dot. Tinted backgrounds keep using bg-emerald-900/60
+ * etc; this just adds the universal bevel layer on top. */
+.hz-icon-dot {
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.18),
+    inset 0 0 0 1px rgb(255 255 255 / 0.05),
+    0 2px 6px rgb(0 0 0 / 0.35);
+}
+
+/* Surface card with a subtle bevel — used for the account row tile. */
+.hz-surface {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--card-elevated), white 4%),
+    var(--card-elevated)
+  );
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    inset 0 0 0 1px rgb(255 255 255 / 0.04),
+    0 4px 12px rgb(0 0 0 / 0.35);
+}
