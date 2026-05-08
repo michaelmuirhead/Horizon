@@ -294,7 +294,15 @@ type Action =
   | { type: "add_planner_entry"; entry: PlannerEntry }
   | { type: "update_planner_entry"; entry: PlannerEntry }
   | { type: "delete_planner_entry"; id: string }
-  | { type: "reorder_planner_entry"; id: string; targetId: string }
+  | {
+      type: "reorder_planner_entry";
+      id: string;
+      targetId: string;
+      // "after" lets the drag UI drop a row past the last entry of a day
+      // by pinning the action to the trailing edge of `targetId` instead
+      // of immediately before it.
+      position: "before" | "after";
+    }
   | { type: "add_scheduled"; scheduled: ScheduledTransaction }
   | { type: "update_scheduled"; scheduled: ScheduledTransaction }
   | { type: "delete_scheduled"; id: string }
@@ -1095,7 +1103,9 @@ function reducer(state: State, action: Action): State {
       next.splice(sourceIdx, 1);
       const targetIdx = next.findIndex((e) => e.id === action.targetId);
       if (targetIdx < 0) return state;
-      next.splice(targetIdx, 0, source);
+      const insertAt =
+        action.position === "after" ? targetIdx + 1 : targetIdx;
+      next.splice(insertAt, 0, source);
       return { ...state, plannerEntries: next };
     }
     case "add_scheduled":
@@ -1370,7 +1380,11 @@ type Ctx = {
   addPlannerEntry: (entry: Omit<PlannerEntry, "id">) => void;
   updatePlannerEntry: (entry: PlannerEntry) => void;
   deletePlannerEntry: (id: string) => void;
-  reorderPlannerEntry: (id: string, targetId: string) => void;
+  reorderPlannerEntry: (
+    id: string,
+    targetId: string,
+    position: "before" | "after",
+  ) => void;
   addScheduled: (s: ScheduledInput) => void;
   updateScheduled: (s: ScheduledTransaction) => void;
   deleteScheduled: (id: string) => void;
@@ -2161,9 +2175,12 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "delete_planner_entry", id });
   }, []);
 
-  const reorderPlannerEntry = useCallback((id: string, targetId: string) => {
-    dispatch({ type: "reorder_planner_entry", id, targetId });
-  }, []);
+  const reorderPlannerEntry = useCallback(
+    (id: string, targetId: string, position: "before" | "after") => {
+      dispatch({ type: "reorder_planner_entry", id, targetId, position });
+    },
+    [],
+  );
 
   const addScheduled = useCallback(
     (scheduled: ScheduledInput) => {
