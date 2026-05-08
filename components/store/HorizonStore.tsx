@@ -46,6 +46,11 @@ import {
 import { setCurrency as setCurrencyFormatter } from "@/lib/format";
 import { type PlannerEntry, samplePlannerEntries } from "@/lib/planner";
 import { type WishlistItem, sampleWishlist } from "@/lib/wishlist";
+import {
+  type SavingsContribution,
+  type SavingsGoal,
+  sampleSavingsGoals,
+} from "@/lib/savingsGoals";
 import { type TransactionTemplate, sampleTemplates } from "@/lib/templates";
 import {
   advanceDate,
@@ -157,6 +162,7 @@ type State = {
   monthNotes: Record<string, string>;
   rules: CategorizationRule[];
   wishlist: WishlistItem[];
+  savingsGoals: SavingsGoal[];
   templates: TransactionTemplate[];
   settings: AppSettings;
   hydrated: boolean;
@@ -177,6 +183,7 @@ type Action =
       monthNotes: Record<string, string>;
       rules: CategorizationRule[];
       wishlist: WishlistItem[];
+      savingsGoals: SavingsGoal[];
       templates: TransactionTemplate[];
       settings: AppSettings;
     }
@@ -225,6 +232,23 @@ type Action =
   | { type: "add_wishlist_item"; item: WishlistItem }
   | { type: "update_wishlist_item"; item: WishlistItem }
   | { type: "delete_wishlist_item"; id: string }
+  | { type: "add_savings_goal"; goal: SavingsGoal }
+  | {
+      type: "update_savings_goal";
+      id: string;
+      patch: Partial<Omit<SavingsGoal, "id" | "contributions" | "createdAt">>;
+    }
+  | { type: "delete_savings_goal"; id: string }
+  | {
+      type: "add_savings_contribution";
+      goalId: string;
+      contribution: SavingsContribution;
+    }
+  | {
+      type: "delete_savings_contribution";
+      goalId: string;
+      contributionId: string;
+    }
   | { type: "add_template"; template: TransactionTemplate }
   | { type: "update_template"; template: TransactionTemplate }
   | { type: "delete_template"; id: string }
@@ -281,6 +305,7 @@ const initialState: State = {
   monthNotes: {},
   rules: [],
   wishlist: sampleWishlist,
+  savingsGoals: sampleSavingsGoals,
   templates: sampleTemplates,
   settings: defaultSettings,
   hydrated: false,
@@ -302,6 +327,7 @@ function reducer(state: State, action: Action): State {
         monthNotes: action.monthNotes,
         rules: action.rules,
         wishlist: action.wishlist,
+        savingsGoals: action.savingsGoals,
         templates: action.templates,
         settings: action.settings,
         hydrated: true,
@@ -587,6 +613,51 @@ function reducer(state: State, action: Action): State {
       return {
         ...state,
         wishlist: state.wishlist.filter((w) => w.id !== action.id),
+      };
+    case "add_savings_goal":
+      return {
+        ...state,
+        savingsGoals: [action.goal, ...state.savingsGoals],
+      };
+    case "update_savings_goal":
+      return {
+        ...state,
+        savingsGoals: state.savingsGoals.map((g) =>
+          g.id === action.id ? { ...g, ...action.patch } : g,
+        ),
+      };
+    case "delete_savings_goal":
+      return {
+        ...state,
+        savingsGoals: state.savingsGoals.filter((g) => g.id !== action.id),
+      };
+    case "add_savings_contribution":
+      return {
+        ...state,
+        savingsGoals: state.savingsGoals.map((g) =>
+          g.id === action.goalId
+            ? {
+                ...g,
+                // Newest-first so the detail page lists recent activity at
+                // the top without a sort step.
+                contributions: [action.contribution, ...g.contributions],
+              }
+            : g,
+        ),
+      };
+    case "delete_savings_contribution":
+      return {
+        ...state,
+        savingsGoals: state.savingsGoals.map((g) =>
+          g.id === action.goalId
+            ? {
+                ...g,
+                contributions: g.contributions.filter(
+                  (c) => c.id !== action.contributionId,
+                ),
+              }
+            : g,
+        ),
       };
     case "add_template":
       return { ...state, templates: [action.template, ...state.templates] };
@@ -982,6 +1053,9 @@ function reducer(state: State, action: Action): State {
         wishlist: Array.isArray(action.payload.wishlist)
           ? action.payload.wishlist
           : state.wishlist,
+        savingsGoals: Array.isArray(action.payload.savingsGoals)
+          ? action.payload.savingsGoals
+          : state.savingsGoals,
         templates: Array.isArray(action.payload.templates)
           ? action.payload.templates
           : state.templates,
@@ -1125,6 +1199,20 @@ type Ctx = {
   addWishlistItem: (item: Omit<WishlistItem, "id" | "createdAt">) => void;
   updateWishlistItem: (item: WishlistItem) => void;
   deleteWishlistItem: (id: string) => void;
+  savingsGoals: SavingsGoal[];
+  addSavingsGoal: (
+    goal: Omit<SavingsGoal, "id" | "contributions" | "createdAt">,
+  ) => void;
+  updateSavingsGoal: (
+    id: string,
+    patch: Partial<Omit<SavingsGoal, "id" | "contributions" | "createdAt">>,
+  ) => void;
+  deleteSavingsGoal: (id: string) => void;
+  addSavingsContribution: (
+    goalId: string,
+    contribution: Omit<SavingsContribution, "id">,
+  ) => void;
+  deleteSavingsContribution: (goalId: string, contributionId: string) => void;
   templates: TransactionTemplate[];
   addTemplate: (template: Omit<TransactionTemplate, "id">) => void;
   updateTemplate: (template: TransactionTemplate) => void;
@@ -1375,6 +1463,9 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
             wishlist: Array.isArray(parsed.wishlist)
               ? (parsed.wishlist as WishlistItem[])
               : sampleWishlist,
+            savingsGoals: Array.isArray(parsed.savingsGoals)
+              ? (parsed.savingsGoals as SavingsGoal[])
+              : sampleSavingsGoals,
             templates: Array.isArray(parsed.templates)
               ? (parsed.templates as TransactionTemplate[])
               : sampleTemplates,
@@ -1406,6 +1497,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       monthNotes: {},
       rules: [],
       wishlist: sampleWishlist,
+      savingsGoals: sampleSavingsGoals,
       templates: sampleTemplates,
       settings: defaultSettings,
     });
@@ -1618,6 +1710,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
           monthNotes: state.monthNotes,
           rules: state.rules,
           wishlist: state.wishlist,
+          savingsGoals: state.savingsGoals,
           templates: state.templates,
           settings: state.settings,
         }),
@@ -1758,6 +1851,53 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
   const deleteWishlistItem = useCallback((id: string) => {
     dispatch({ type: "delete_wishlist_item", id });
   }, []);
+
+  const addSavingsGoal = useCallback(
+    (input: Omit<SavingsGoal, "id" | "contributions" | "createdAt">) => {
+      dispatch({
+        type: "add_savings_goal",
+        goal: {
+          id: makeId(),
+          contributions: [],
+          createdAt: todayIsoScheduled(),
+          ...input,
+        },
+      });
+    },
+    [],
+  );
+  const updateSavingsGoal = useCallback(
+    (
+      id: string,
+      patch: Partial<Omit<SavingsGoal, "id" | "contributions" | "createdAt">>,
+    ) => {
+      dispatch({ type: "update_savings_goal", id, patch });
+    },
+    [],
+  );
+  const deleteSavingsGoal = useCallback((id: string) => {
+    dispatch({ type: "delete_savings_goal", id });
+  }, []);
+  const addSavingsContribution = useCallback(
+    (goalId: string, input: Omit<SavingsContribution, "id">) => {
+      dispatch({
+        type: "add_savings_contribution",
+        goalId,
+        contribution: { id: makeId(), ...input },
+      });
+    },
+    [],
+  );
+  const deleteSavingsContribution = useCallback(
+    (goalId: string, contributionId: string) => {
+      dispatch({
+        type: "delete_savings_contribution",
+        goalId,
+        contributionId,
+      });
+    },
+    [],
+  );
 
   const addTemplate = useCallback(
     (input: Omit<TransactionTemplate, "id">) => {
@@ -2165,6 +2305,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
             monthNotes: state.monthNotes,
             rules: state.rules,
             wishlist: state.wishlist,
+            savingsGoals: state.savingsGoals,
             templates: state.templates,
             settings: state.settings,
           }),
@@ -2238,6 +2379,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
           monthNotes: {},
           rules: state.rules,
           wishlist: [],
+          savingsGoals: [],
           templates: state.templates,
           settings: state.settings,
         },
@@ -2375,6 +2517,12 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       addWishlistItem,
       updateWishlistItem,
       deleteWishlistItem,
+      savingsGoals: state.savingsGoals,
+      addSavingsGoal,
+      updateSavingsGoal,
+      deleteSavingsGoal,
+      addSavingsContribution,
+      deleteSavingsContribution,
       templates: state.templates,
       addTemplate,
       updateTemplate,
@@ -2468,6 +2616,12 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       addWishlistItem,
       updateWishlistItem,
       deleteWishlistItem,
+      state.savingsGoals,
+      addSavingsGoal,
+      updateSavingsGoal,
+      deleteSavingsGoal,
+      addSavingsContribution,
+      deleteSavingsContribution,
       state.templates,
       addTemplate,
       updateTemplate,

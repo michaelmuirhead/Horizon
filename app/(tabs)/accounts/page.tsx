@@ -1,4 +1,11 @@
-import { Plus, MoreHorizontal, PlusCircle, Landmark, Scale } from "lucide-react";
+import {
+  Plus,
+  MoreHorizontal,
+  PlusCircle,
+  Landmark,
+  PiggyBank,
+  Scale,
+} from "lucide-react";
 import IconCapsule, { CapsuleButton } from "@/components/layout/IconCapsule";
 import PageTitle from "@/components/layout/PageTitle";
 import AccountsList from "@/components/accounts/AccountsList";
@@ -35,6 +42,11 @@ export default function AccountsPage() {
             Icon={Scale}
             label="Track Debts"
             href="/accounts/debts"
+          />
+          <AccentActionButton
+            Icon={PiggyBank}
+            label="Savings Goals"
+            href="/savings"
           />
           <AccentActionButton Icon={Landmark} label="Manage Bank Connections" />
         </div>
