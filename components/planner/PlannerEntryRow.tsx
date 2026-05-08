@@ -21,12 +21,6 @@ type Props = {
   // page passes a draggable grip when reorder is enabled; other callers
   // can leave it undefined and skip the slot entirely.
   dragHandle?: ReactNode;
-  // Visual flag set by the page while another entry is being dragged
-  // over this row, so we can outline the drop target.
-  isDropTarget?: boolean;
-  // Slightly fades the row while it's the active drag source so the
-  // user can track where the entry is moving from.
-  isDragging?: boolean;
 };
 
 export default function PlannerEntryRow({
@@ -34,8 +28,6 @@ export default function PlannerEntryRow({
   runningBalance,
   showDate = true,
   dragHandle,
-  isDropTarget,
-  isDragging,
 }: Props) {
   const { deletePlannerEntry, markUndoable } = useHorizonStore();
   const isIncome = entry.amount > 0;
@@ -53,11 +45,7 @@ export default function PlannerEntryRow({
       onDelete={handleDelete}
       ariaLabel={`Delete entry ${entry.label}`}
     >
-      <div
-        className={`flex w-full items-stretch bg-card transition-colors ${
-          isDropTarget ? "ring-2 ring-inset ring-accent/60" : ""
-        } ${isDragging ? "opacity-40" : ""}`}
-      >
+      <div className="flex w-full items-stretch bg-card">
         {dragHandle}
         <Link
           href={`/planner/${entry.id}`}

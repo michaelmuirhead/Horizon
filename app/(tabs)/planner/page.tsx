@@ -70,7 +70,7 @@ export default function PlannerPage() {
   const [monthKey, setMonthKey] = useState<string>(() =>
     monthKeyOf(now.getFullYear(), now.getMonth()),
   );
-  const { drag, dropTargetId, gripProps } = usePlannerReorderDrag({
+  const { drag, rowStyle, gripProps } = usePlannerReorderDrag({
     onReorder: reorderPlannerEntry,
   });
 
@@ -260,15 +260,12 @@ export default function PlannerPage() {
                         key={entry.id}
                         data-planner-entry={entry.id}
                         data-planner-date={group.date}
+                        style={rowStyle(entry.id)}
                       >
                         <PlannerEntryRow
                           entry={entry}
                           runningBalance={running}
                           showDate={false}
-                          isDragging={drag?.id === entry.id}
-                          isDropTarget={
-                            dropTargetId === entry.id && drag?.id !== entry.id
-                          }
                           dragHandle={
                             <button
                               type="button"
