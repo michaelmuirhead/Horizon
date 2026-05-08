@@ -67,19 +67,20 @@ export type PlannerDayRow = {
 
 export type PlannerDayGroup = {
   date: string; // ISO YYYY-MM-DD
-  rows: PlannerDayRow[]; // newest first within the day
+  rows: PlannerDayRow[]; // displayed in the user's drag-defined order
   dayTotal: number; // signed net for the day
 };
 
 // Build day-grouped rows for a month-scoped slice of entries. Groups come
-// back newest-day first so they can be rendered top-down; rows within each
-// day are also newest-first. Running balance is computed in chronological
-// order and carries across day boundaries — matching Fudget's ledger feel.
+// back newest-day first; rows within each day preserve the source array
+// order so user drag-reorder is the source of truth (Array.prototype.sort
+// is stable, so equal-date rows keep input order). Running balance walks
+// chronologically across day boundaries so it tracks the new order
+// immediately after a drop.
 export function groupEntriesByDay(entries: PlannerEntry[]): PlannerDayGroup[] {
-  const ascending = entries.slice().sort((a, b) => {
-    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
-    return a.id < b.id ? -1 : 1;
-  });
+  const ascending = entries
+    .slice()
+    .sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? -1 : 1));
 
   const byDate = new Map<string, PlannerDayRow[]>();
   let running = 0;
@@ -93,7 +94,7 @@ export function groupEntriesByDay(entries: PlannerEntry[]): PlannerDayGroup[] {
   const groups: PlannerDayGroup[] = [];
   for (const [date, rows] of byDate) {
     const dayTotal = rows.reduce((sum, r) => sum + r.entry.amount, 0);
-    groups.push({ date, rows: rows.slice().reverse(), dayTotal });
+    groups.push({ date, rows, dayTotal });
   }
   groups.sort((a, b) => (a.date < b.date ? 1 : -1));
   return groups;
