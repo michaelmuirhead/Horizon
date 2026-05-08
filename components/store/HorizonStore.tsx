@@ -1070,11 +1070,22 @@ function reducer(state: State, action: Action): State {
         ),
       };
     }
-    case "add_planner_entry":
-      return {
-        ...state,
-        plannerEntries: [action.entry, ...state.plannerEntries],
-      };
+    case "add_planner_entry": {
+      // Insert just after the last existing entry of the same date so
+      // the new row lands underneath the day's other entries instead of
+      // jumping to the top. Entries on a different date can sit anywhere
+      // in the array — `groupEntriesByDay` sorts by date for display.
+      const next = state.plannerEntries.slice();
+      let insertAt = next.length;
+      for (let i = next.length - 1; i >= 0; i--) {
+        if (next[i].date === action.entry.date) {
+          insertAt = i + 1;
+          break;
+        }
+      }
+      next.splice(insertAt, 0, action.entry);
+      return { ...state, plannerEntries: next };
+    }
     case "update_planner_entry":
       return {
         ...state,

@@ -2,6 +2,7 @@
 
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -42,6 +43,9 @@ type DragGeom = {
   sourceHeight: number;
   // Captured pointer Y at arm time so deltaY = (current y) - startY.
   startY: number;
+  // The pointerId we're tracking. Document listeners may receive other
+  // pointer events (multi-touch); we filter on this to ignore them.
+  pointerId: number;
 };
 
 type DragView = {
@@ -66,26 +70,57 @@ type Options = {
 
 // Pointer-events powered drag with live row-shift previews. The grip is
 // a dedicated 28px handle so we arm immediately on pointerdown for both
-// mouse and touch — long-press timers were unreliable on iOS (Safari
-// frequently fires `pointercancel` mid-wait when it suspects a scroll,
-// killing the timer). A tap-without-movement is harmless: target_reduced
-// equals sourceIndex so onPointerUp dispatches no reorder.
+// mouse and touch. Move/end listeners are attached on `document` rather
+// than the grip element — iOS Safari (and the standalone PWA shell built
+// on WKWebView) doesn't reliably honor `setPointerCapture` for touch
+// pointers, so without document-level listeners the move events stop
+// firing as soon as the finger leaves the small grip area.
 export function usePlannerReorderDrag({ onReorder }: Options) {
   const [view, setView] = useState<DragView | null>(null);
 
   const armedRef = useRef(false);
   const geomRef = useRef<DragGeom | null>(null);
   const targetReducedRef = useRef<number>(-1);
+  // Refs for the document-level listeners — needed so the pointerdown
+  // handler can install them and the cleanup can find the same fns.
+  const moveHandlerRef = useRef<((e: PointerEvent) => void) | null>(null);
+  const endHandlerRef = useRef<((e: PointerEvent) => void) | null>(null);
+
+  const detachDocListeners = useCallback(() => {
+    if (moveHandlerRef.current) {
+      document.removeEventListener("pointermove", moveHandlerRef.current);
+      moveHandlerRef.current = null;
+    }
+    if (endHandlerRef.current) {
+      document.removeEventListener("pointerup", endHandlerRef.current);
+      document.removeEventListener("pointercancel", endHandlerRef.current);
+      endHandlerRef.current = null;
+    }
+  }, []);
 
   const endGesture = useCallback(() => {
+    detachDocListeners();
     armedRef.current = false;
     geomRef.current = null;
     targetReducedRef.current = -1;
     setView(null);
-  }, []);
+  }, [detachDocListeners]);
+
+  // Always clean up document listeners if the component unmounts mid-drag.
+  useEffect(() => {
+    return () => {
+      detachDocListeners();
+    };
+  }, [detachDocListeners]);
 
   const captureGeometry = useCallback(
-    (gripEl: HTMLElement, sourceId: string, date: string, startY: number) => {
+    (
+      gripEl: HTMLElement,
+      sourceId: string,
+      date: string,
+      startY: number,
+      pointerId: number,
+    ) => {
       const li = gripEl.closest<HTMLElement>("[data-planner-entry]");
       if (!li) return null;
       const ul = li.parentElement;
@@ -111,6 +146,7 @@ export function usePlannerReorderDrag({ onReorder }: Options) {
         sourceIndex,
         sourceHeight: rows[sourceIndex].height,
         startY,
+        pointerId,
       };
       geomRef.current = geom;
       return geom;
@@ -152,23 +188,41 @@ export function usePlannerReorderDrag({ onReorder }: Options) {
     };
   }, []);
 
+  const commitDropFromGesture = useCallback(() => {
+    const geom = geomRef.current;
+    if (!armedRef.current || !geom) return;
+    const targetReduced = targetReducedRef.current;
+    if (targetReduced < 0 || targetReduced === geom.sourceIndex) return;
+    const nonSource = geom.rows.filter((r) => r.id !== geom.sourceId);
+    if (targetReduced < nonSource.length) {
+      onReorder(geom.sourceId, nonSource[targetReduced].id, "before");
+    } else if (nonSource.length > 0) {
+      // Past the last row — pin to the trailing edge so source ends up
+      // at the very bottom of the day.
+      onReorder(
+        geom.sourceId,
+        nonSource[nonSource.length - 1].id,
+        "after",
+      );
+    }
+  }, [onReorder]);
+
   const gripProps = useCallback(
     (id: string, date: string) => ({
       style: GRIP_STYLE,
       onPointerDown(e: ReactPointerEvent<HTMLElement>) {
         if (e.pointerType === "mouse" && e.button !== 0) return;
         // preventDefault tells iOS Safari "this gesture is mine" so it
-        // doesn't try to start a system scroll/select and pointercancel
-        // us mid-drag.
+        // doesn't try to start a system scroll/select.
         e.preventDefault();
         const grip = e.currentTarget;
-        try {
-          grip.setPointerCapture(e.pointerId);
-        } catch {
-          // setPointerCapture can throw if the pointer's already gone;
-          // we still try to proceed with the gesture.
-        }
-        const geom = captureGeometry(grip, id, date, e.clientY);
+        const geom = captureGeometry(
+          grip,
+          id,
+          date,
+          e.clientY,
+          e.pointerId,
+        );
         if (!geom) return;
         armedRef.current = true;
         const next = computeView(0);
@@ -182,41 +236,32 @@ export function usePlannerReorderDrag({ onReorder }: Options) {
             // vibrate API at all — try/catch covers the missing fn.)
           }
         }
-      },
-      onPointerMove(e: ReactPointerEvent<HTMLElement>) {
-        const geom = geomRef.current;
-        if (!armedRef.current || !geom) return;
-        const next = computeView(e.clientY - geom.startY);
-        if (next) setView(next);
-      },
-      onPointerUp() {
-        const geom = geomRef.current;
-        if (!armedRef.current || !geom) {
+
+        // Install document-level listeners so we keep getting move/end
+        // events even when the finger leaves the grip's 28px footprint.
+        // Non-passive so the move handler can preventDefault and stop
+        // iOS from interpreting the drag as a scroll.
+        const onMove = (ev: PointerEvent) => {
+          const g = geomRef.current;
+          if (!g || ev.pointerId !== g.pointerId) return;
+          ev.preventDefault();
+          const nextView = computeView(ev.clientY - g.startY);
+          if (nextView) setView(nextView);
+        };
+        const onEnd = (ev: PointerEvent) => {
+          const g = geomRef.current;
+          if (!g || ev.pointerId !== g.pointerId) return;
+          if (ev.type === "pointerup") commitDropFromGesture();
           endGesture();
-          return;
-        }
-        const targetReduced = targetReducedRef.current;
-        if (targetReduced >= 0 && targetReduced !== geom.sourceIndex) {
-          const nonSource = geom.rows.filter((r) => r.id !== geom.sourceId);
-          if (targetReduced < nonSource.length) {
-            onReorder(geom.sourceId, nonSource[targetReduced].id, "before");
-          } else if (nonSource.length > 0) {
-            // Past the last row — pin to the trailing edge so source
-            // ends up at the very bottom of the day.
-            onReorder(
-              geom.sourceId,
-              nonSource[nonSource.length - 1].id,
-              "after",
-            );
-          }
-        }
-        endGesture();
-      },
-      onPointerCancel() {
-        endGesture();
+        };
+        moveHandlerRef.current = onMove;
+        endHandlerRef.current = onEnd;
+        document.addEventListener("pointermove", onMove, { passive: false });
+        document.addEventListener("pointerup", onEnd);
+        document.addEventListener("pointercancel", onEnd);
       },
     }),
-    [captureGeometry, computeView, endGesture, onReorder],
+    [captureGeometry, commitDropFromGesture, computeView, endGesture],
   );
 
   const rowStyle = useCallback(
