@@ -27,10 +27,13 @@ export default function NewAccountPage() {
   const [tracking, setTracking] = useState(false);
   const [loanApr, setLoanApr] = useState("");
   const [loanTerm, setLoanTerm] = useState("");
+  const [creditApr, setCreditApr] = useState("");
+  const [minimumPayment, setMinimumPayment] = useState("");
 
   const valid = name.trim() !== "" && balance !== "" && !isNaN(Number(balance));
   const isLiability = LIABILITIES.includes(type);
   const isLoan = type === "loan";
+  const isCreditCard = type === "credit-card";
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -39,6 +42,8 @@ export default function NewAccountPage() {
     const signed = isLiability ? -magnitude : magnitude;
     const apr = parseFloat(loanApr);
     const term = parseInt(loanTerm, 10);
+    const cardApr = parseFloat(creditApr);
+    const minPay = parseFloat(minimumPayment);
     addAccount({
       name: name.trim(),
       type,
@@ -49,6 +54,12 @@ export default function NewAccountPage() {
         ? { loanTermMonths: term }
         : {}),
       ...(isLoan ? { loanOriginalPrincipal: magnitude } : {}),
+      ...(isCreditCard && Number.isFinite(cardApr) && cardApr > 0
+        ? { apr: cardApr }
+        : {}),
+      ...(isLiability && Number.isFinite(minPay) && minPay > 0
+        ? { minimumPayment: minPay }
+        : {}),
     });
     router.push("/accounts");
   }
@@ -134,6 +145,41 @@ export default function NewAccountPage() {
                 />
               </FormRow>
             </>
+          )}
+
+          {isCreditCard && (
+            <FormRow label="APR (%)" htmlFor="credit-apr">
+              <TextInput
+                id="credit-apr"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                value={creditApr}
+                onChange={(e) => setCreditApr(e.target.value)}
+                className="max-w-[120px]"
+              />
+            </FormRow>
+          )}
+
+          {isLiability && (
+            <FormRow label="Min. Payment" htmlFor="min-payment">
+              <span className="flex items-center justify-end gap-1">
+                <span className="text-fg/60">$</span>
+                <TextInput
+                  id="min-payment"
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={minimumPayment}
+                  onChange={(e) => setMinimumPayment(e.target.value)}
+                  className="max-w-[140px]"
+                />
+              </span>
+            </FormRow>
           )}
 
           <FormRow label="Off-Budget">
