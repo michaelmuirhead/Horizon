@@ -8,10 +8,10 @@ export default function AddTransactionFAB() {
         <div className="flex justify-end">
           <Link
             href="/spending/new"
-            className="pointer-events-auto inline-flex items-center gap-2 rounded-full bg-card-elevated px-5 py-3 text-base font-bold shadow-2xl ring-1 ring-fg/5"
+            className="hz-pill hz-pill-accent pointer-events-auto inline-flex items-center gap-2 rounded-full px-5 py-3 text-base font-bold"
           >
             <Plus size={20} strokeWidth={2.5} />
-            Transaction
+            <span>Transaction</span>
           </Link>
         </div>
       </div>

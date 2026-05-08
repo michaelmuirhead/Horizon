@@ -24,7 +24,7 @@ export default function BudgetToolbar({
 }: Props) {
   return (
     <div className="flex items-center justify-between gap-3 px-4 pt-[max(env(safe-area-inset-top),12px)] pb-3">
-      <div className="flex items-center rounded-full bg-card-elevated">
+      <div className="hz-capsule flex items-center rounded-full overflow-hidden">
         <Link
           href={`/budget/auto-assign?month=${monthKey}`}
           aria-label="Auto-assign"
@@ -67,7 +67,7 @@ export default function BudgetToolbar({
       <Link
         href="/budget/manage"
         aria-label="Manage categories"
-        className="grid h-10 w-10 place-items-center rounded-full bg-card-elevated"
+        className="hz-capsule grid h-10 w-10 place-items-center rounded-full"
       >
         <MoreHorizontal size={20} strokeWidth={2.5} />
       </Link>

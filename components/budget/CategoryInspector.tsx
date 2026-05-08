@@ -156,7 +156,7 @@ export default function CategoryInspector({
           onClick={() => togglePin(category.id)}
           aria-label={pinned ? `Unpin ${category.name}` : `Pin ${category.name}`}
           aria-pressed={pinned}
-          className="grid h-9 w-9 place-items-center rounded-full bg-card-elevated"
+          className="hz-capsule grid h-9 w-9 place-items-center rounded-full"
         >
           <Pin
             size={16}
@@ -211,16 +211,16 @@ export default function CategoryInspector({
       <div className="flex flex-wrap gap-2">
         <Link
           href={fundHref}
-          className="flex-1 min-w-[160px] inline-flex items-center justify-center gap-2 rounded-full bg-accent px-4 py-2.5 text-sm font-bold text-fg"
+          className="hz-pill hz-pill-accent flex-1 min-w-[160px] inline-flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold"
         >
           <PlusCircle size={16} strokeWidth={2.4} />
-          {available < 0 ? "Cover overspending" : "Fund"}
+          <span>{available < 0 ? "Cover overspending" : "Fund"}</span>
         </Link>
         <Link
           href={moveAwayHref}
-          className="flex-1 min-w-[140px] inline-flex items-center justify-center gap-2 rounded-full bg-card-elevated px-4 py-2.5 text-sm font-bold"
+          className="hz-pill flex-1 min-w-[140px] inline-flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold"
         >
-          Move away
+          <span>Move away</span>
         </Link>
       </div>
 
@@ -233,7 +233,7 @@ export default function CategoryInspector({
           <Link
             href={targetHref}
             aria-label={target ? "Edit target" : "Set target"}
-            className="grid h-8 w-8 place-items-center rounded-full bg-card-elevated"
+            className="hz-capsule grid h-8 w-8 place-items-center rounded-full"
           >
             <Pencil size={14} strokeWidth={2.4} />
           </Link>

@@ -166,16 +166,20 @@ export default function GoalSection() {
         <Link
           href={editHref}
           aria-label="Edit target"
-          className="grid h-9 w-9 place-items-center rounded-full bg-card-elevated"
+          className="hz-capsule grid h-9 w-9 place-items-center rounded-full"
         >
           <Pencil size={16} strokeWidth={2.4} />
         </Link>
       </div>
 
-      <div className="mt-4 h-3 overflow-hidden rounded-full bg-card-elevated">
+      <div className="hz-bar-track mt-4 h-3 overflow-hidden rounded-full">
         <div
-          className={`h-full ${
-            celebrate ? "bg-mint hz-pulse-mint" : reached ? "bg-mint" : "bg-accent"
+          className={`h-full rounded-full ${
+            celebrate
+              ? "hz-bar-fill-mint hz-pulse-mint"
+              : reached
+                ? "hz-bar-fill-mint"
+                : "hz-bar-fill"
           }`}
           style={{ width: `${pct}%` }}
         />

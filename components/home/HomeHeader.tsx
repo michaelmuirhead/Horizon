@@ -8,7 +8,7 @@ export default function HomeHeader({ household }: { household: string }) {
       <Link
         href="/settings"
         aria-label="Settings"
-        className="grid h-10 w-10 place-items-center rounded-full bg-black/40"
+        className="hz-capsule grid h-10 w-10 place-items-center rounded-full"
       >
         <Settings size={20} strokeWidth={2.5} />
       </Link>

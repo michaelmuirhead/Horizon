@@ -35,11 +35,11 @@ export default function SavingsGoalRow({ goal }: { goal: SavingsGoal }) {
   return (
     <Link
       href={`/savings/${goal.id}`}
-      className="block rounded-2xl bg-card-elevated px-4 py-3.5 ring-1 ring-accent/10"
+      className="hz-surface block rounded-2xl px-4 py-3.5 ring-1 ring-accent/10"
     >
       <div className="flex items-center gap-3">
         <span
-          className={`grid h-9 w-9 shrink-0 place-items-center rounded-full ${
+          className={`hz-icon-dot grid h-9 w-9 shrink-0 place-items-center rounded-full ${
             reached
               ? "bg-emerald-900/40 text-emerald-300"
               : "bg-accent/20 text-accent"
@@ -70,9 +70,9 @@ export default function SavingsGoalRow({ goal }: { goal: SavingsGoal }) {
         <ChevronRight size={16} className="text-fg/55" />
       </div>
 
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-card">
+      <div className="hz-bar-track mt-2 h-2 overflow-hidden rounded-full">
         <div
-          className={`h-full ${reached ? "bg-emerald-400" : "bg-accent"}`}
+          className={`h-full rounded-full ${reached ? "hz-bar-fill-mint" : "hz-bar-fill"}`}
           style={{ width: `${pct}%` }}
         />
       </div>

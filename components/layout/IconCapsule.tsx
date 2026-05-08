@@ -11,7 +11,7 @@ export default function IconCapsule({ children, ariaLabel }: Props) {
     <div
       role={ariaLabel ? "group" : undefined}
       aria-label={ariaLabel}
-      className="inline-flex items-center rounded-full bg-card-elevated divide-x divide-fg/10"
+      className="hz-capsule inline-flex items-center rounded-full overflow-hidden divide-x divide-fg/10"
     >
       {children}
     </div>

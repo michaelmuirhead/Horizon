@@ -42,10 +42,10 @@ export default function AccountRow({
   return (
     <Link
       href={`/accounts/${account.id}`}
-      className="flex w-full items-center gap-3 rounded-2xl bg-card-elevated px-3 py-3 ring-1 ring-accent/10"
+      className="hz-surface flex w-full items-center gap-3 rounded-2xl px-3 py-3 ring-1 ring-accent/10"
     >
       <span
-        className={`grid h-9 w-9 shrink-0 place-items-center rounded-full ${iconBgByType[account.type]}`}
+        className={`hz-icon-dot grid h-9 w-9 shrink-0 place-items-center rounded-full ${iconBgByType[account.type]}`}
       >
         <Icon size={18} strokeWidth={2.4} />
       </span>

@@ -88,27 +88,23 @@ export default function TransactionRow({
         <div className="mt-1.5">
           {tx.isReadyToAssign ? (
             tx.amount < 0 ? (
-              <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-900/40 px-2 py-1 text-xs font-semibold text-amber-300">
+              <span className="hz-pill-sm hz-pill-warm inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold">
                 <Scale size={12} strokeWidth={2.5} />
                 Adjustment
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-900/60 px-2 py-1 text-xs font-semibold text-emerald-200">
-                <Home
-                  size={12}
-                  strokeWidth={2.5}
-                  className="text-emerald-300"
-                />
+              <span className="hz-pill-sm hz-pill-mint inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold">
+                <Home size={12} strokeWidth={2.5} />
                 {tx.category}
               </span>
             )
           ) : tx.transferId ? (
-            <span className="inline-flex items-center gap-1.5 rounded-md bg-sky-900/40 px-2 py-1 text-xs font-semibold text-sky-300">
+            <span className="hz-pill-sm hz-pill-info inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold">
               <ArrowLeftRight size={12} strokeWidth={2.5} />
               Transfer
             </span>
           ) : tx.splits && tx.splits.length > 0 ? (
-            <span className="inline-flex items-center gap-1.5 rounded-md bg-accent/20 px-2 py-1 text-xs font-semibold text-accent">
+            <span className="hz-pill-sm hz-pill-accent inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-semibold">
               <GitBranch size={12} strokeWidth={2.5} />
               Split · {tx.splits.length} categories
             </span>
@@ -116,7 +112,7 @@ export default function TransactionRow({
             <button
               type="button"
               onClick={jumpToFilter(tx.category)}
-              className="inline-block rounded-md bg-pill px-2 py-1 text-xs font-semibold text-fg/85 hover:text-fg"
+              className="hz-pill-sm inline-block rounded-md px-2 py-1 text-xs font-semibold"
             >
               {tx.category}
             </button>
@@ -126,7 +122,7 @@ export default function TransactionRow({
               {tx.tags.map((tag) => (
                 <span
                   key={tag}
-                  className="inline-block rounded-md bg-card-elevated px-1.5 py-0.5 text-[10px] font-semibold text-fg/65"
+                  className="hz-pill-sm inline-block rounded-md px-1.5 py-0.5 text-[10px] font-semibold"
                 >
                   #{tag}
                 </span>

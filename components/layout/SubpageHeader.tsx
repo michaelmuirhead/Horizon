@@ -16,7 +16,7 @@ export default function SubpageHeader({ title, backHref, trailing }: Props) {
       <Link
         href={backHref}
         aria-label="Back"
-        className="grid h-10 w-10 place-items-center rounded-full bg-card-elevated"
+        className="hz-capsule grid h-10 w-10 place-items-center rounded-full"
       >
         <ChevronLeft size={22} strokeWidth={2.5} />
       </Link>
