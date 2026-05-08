@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import PageTitle from "@/components/layout/PageTitle";
 import PlannerEntryRow from "@/components/planner/PlannerEntryRow";
+import PlannerFAB from "@/components/planner/PlannerFAB";
 import QuickAddBar from "@/components/planner/QuickAddBar";
 import AnimatedCurrency from "@/components/shared/AnimatedCurrency";
 import { useHorizonStore } from "@/components/store/HorizonStore";
@@ -238,6 +239,8 @@ export default function PlannerPage() {
           })}
         </div>
       )}
+
+      <PlannerFAB monthKey={monthKey} />
     </>
   );
 }
