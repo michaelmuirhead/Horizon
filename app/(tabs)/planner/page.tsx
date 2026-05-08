@@ -310,6 +310,11 @@ export default function PlannerPage() {
         </div>
       )}
 
+      {/* Tail spacer so the floating add button never covers the last
+          entry — the bottom-nav inset on `main` only clears the nav, not
+          the FAB stacked above it. */}
+      <div aria-hidden className="h-24" />
+
       <PlannerFAB monthKey={monthKey} />
     </>
   );
