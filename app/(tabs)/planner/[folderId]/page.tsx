@@ -1,44 +1,68 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, type FormEvent } from "react";
-import { ChevronRight, Folder, Plus, Pencil, Trash2, Copy } from "lucide-react";
-import PageTitle from "@/components/layout/PageTitle";
+import { use, useMemo, useState, type FormEvent } from "react";
+import { ChevronRight, Copy, Pencil, Plus, Trash2 } from "lucide-react";
+import SubpageHeader from "@/components/layout/SubpageHeader";
 import RowMenu from "@/components/planner/RowMenu";
 import { useHorizonStore } from "@/components/store/HorizonStore";
-import { folderBalance } from "@/lib/planner";
+import { budgetBalance, folderBalance } from "@/lib/planner";
 import { formatCurrency } from "@/lib/format";
 
-export default function PlannerFoldersPage() {
+export default function PlannerFolderPage({
+  params,
+}: {
+  params: Promise<{ folderId: string }>;
+}) {
+  const { folderId } = use(params);
   const {
     plannerFolders,
     plannerBudgets,
     plannerEntries,
-    addPlannerFolder,
-    renamePlannerFolder,
-    deletePlannerFolder,
-    duplicatePlannerFolder,
+    addPlannerBudget,
+    renamePlannerBudget,
+    deletePlannerBudget,
+    duplicatePlannerBudget,
   } = useHorizonStore();
+
+  const folder = plannerFolders.find((f) => f.id === folderId);
+  const budgetsInFolder = useMemo(
+    () => plannerBudgets.filter((b) => b.folderId === folderId),
+    [plannerBudgets, folderId],
+  );
 
   const [creating, setCreating] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
 
-  const totalBalance = useMemo(
-    () =>
-      plannerFolders.reduce(
-        (sum, f) => sum + folderBalance(f.id, plannerBudgets, plannerEntries),
-        0,
-      ),
-    [plannerFolders, plannerBudgets, plannerEntries],
+  const total = useMemo(
+    () => folderBalance(folderId, plannerBudgets, plannerEntries),
+    [folderId, plannerBudgets, plannerEntries],
   );
+
+  if (!folder) {
+    return (
+      <>
+        <SubpageHeader title="Folder" backHref="/planner" />
+        <div className="px-4 pt-10 text-center text-fg/70">
+          <p className="text-base">Folder not found.</p>
+          <Link
+            href="/planner"
+            className="mt-4 inline-block text-accent text-base font-bold"
+          >
+            Back to Planner
+          </Link>
+        </div>
+      </>
+    );
+  }
 
   function submitCreate(e: FormEvent) {
     e.preventDefault();
     const name = draftName.trim();
     if (name === "") return;
-    addPlannerFolder(name);
+    addPlannerBudget(folderId, name);
     setDraftName("");
     setCreating(false);
   }
@@ -47,42 +71,36 @@ export default function PlannerFoldersPage() {
     e.preventDefault();
     if (!renamingId) return;
     const name = renameDraft.trim();
-    if (name !== "") renamePlannerFolder(renamingId, name);
+    if (name !== "") renamePlannerBudget(renamingId, name);
     setRenamingId(null);
   }
 
   return (
     <>
-      <div className="px-4 pt-[max(env(safe-area-inset-top),12px)]">
-        <div className="mt-2">
-          <PageTitle>Planner</PageTitle>
-        </div>
-        <p className="mt-1 text-sm text-fg/55">Folders</p>
-      </div>
+      <SubpageHeader title={folder.name} backHref="/planner" />
 
-      {plannerFolders.length === 0 ? (
+      {budgetsInFolder.length === 0 ? (
         <div className="px-4 py-12 text-center text-sm text-fg/55">
-          No folders yet. Tap{" "}
-          <span className="font-bold text-fg/85">+ Add Folder</span> to start.
+          No budgets in this folder yet. Tap{" "}
+          <span className="font-bold text-fg/85">+ Add Budget</span> to start.
         </div>
       ) : (
-        <ul className="mt-4 divide-y divide-fg/5 border-y border-fg/5">
-          {plannerFolders.map((folder) => {
-            const balance = folderBalance(
-              folder.id,
-              plannerBudgets,
-              plannerEntries,
+        <ul className="mt-2 divide-y divide-fg/5 border-y border-fg/5">
+          {budgetsInFolder.map((budget) => {
+            const entries = plannerEntries.filter(
+              (e) => e.budgetId === budget.id,
             );
+            const balance = budgetBalance(entries);
             const tone =
               balance > 0
                 ? "text-emerald-400"
                 : balance < 0
                   ? "text-rose-400"
                   : "text-fg/60";
-            const isRenaming = renamingId === folder.id;
+            const isRenaming = renamingId === budget.id;
             return (
               <li
-                key={folder.id}
+                key={budget.id}
                 className="flex items-center gap-2 bg-card pl-4 pr-2"
               >
                 {isRenaming ? (
@@ -90,7 +108,6 @@ export default function PlannerFoldersPage() {
                     onSubmit={submitRename}
                     className="flex flex-1 items-center gap-2 py-3"
                   >
-                    <Folder size={18} className="text-accent shrink-0" />
                     <input
                       type="text"
                       autoFocus
@@ -105,12 +122,11 @@ export default function PlannerFoldersPage() {
                   </form>
                 ) : (
                   <Link
-                    href={`/planner/${folder.id}`}
+                    href={`/planner/${folderId}/${budget.id}`}
                     className="flex flex-1 items-center gap-3 py-3.5 min-w-0"
                   >
-                    <Folder size={18} className="text-accent shrink-0" />
                     <span className="flex-1 min-w-0 truncate text-base font-bold">
-                      {folder.name}
+                      {budget.name}
                     </span>
                     <span
                       className={`text-base font-bold tabular-nums shrink-0 ${tone}`}
@@ -122,20 +138,20 @@ export default function PlannerFoldersPage() {
                   </Link>
                 )}
                 <RowMenu
-                  ariaLabel={`Actions for ${folder.name}`}
+                  ariaLabel={`Actions for ${budget.name}`}
                   items={[
                     {
                       label: "Rename",
                       icon: <Pencil size={14} />,
                       onClick: () => {
-                        setRenamingId(folder.id);
-                        setRenameDraft(folder.name);
+                        setRenamingId(budget.id);
+                        setRenameDraft(budget.name);
                       },
                     },
                     {
                       label: "Duplicate",
                       icon: <Copy size={14} />,
-                      onClick: () => duplicatePlannerFolder(folder.id),
+                      onClick: () => duplicatePlannerBudget(budget.id),
                     },
                     {
                       label: "Delete",
@@ -144,10 +160,10 @@ export default function PlannerFoldersPage() {
                       onClick: () => {
                         if (
                           window.confirm(
-                            `Delete "${folder.name}"? This removes every budget inside and their entries.`,
+                            `Delete "${budget.name}"? This removes every entry inside.`,
                           )
                         ) {
-                          deletePlannerFolder(folder.id);
+                          deletePlannerBudget(budget.id);
                         }
                       },
                     },
@@ -165,11 +181,10 @@ export default function PlannerFoldersPage() {
             onSubmit={submitCreate}
             className="flex items-center gap-2 rounded-2xl bg-card px-3 py-2"
           >
-            <Folder size={18} className="text-accent" />
             <input
               type="text"
               autoFocus
-              placeholder="Folder name"
+              placeholder="Budget name"
               value={draftName}
               onChange={(e) => setDraftName(e.target.value)}
               onKeyDown={(e) => {
@@ -194,27 +209,27 @@ export default function PlannerFoldersPage() {
             className="flex w-full items-center justify-center gap-2 rounded-full border border-accent/40 px-5 py-3.5 text-base font-bold text-accent"
           >
             <Plus size={18} strokeWidth={2.5} />
-            Add Folder
+            Add Budget
           </button>
         )}
       </div>
 
-      {plannerFolders.length > 0 && (
+      {budgetsInFolder.length > 0 && (
         <div className="mt-2 px-4 py-3 flex items-baseline justify-between border-t border-fg/5">
           <span className="text-sm font-semibold text-fg/70">
             Folder Balance
           </span>
           <span
             className={`text-xl font-extrabold tabular-nums ${
-              totalBalance > 0
+              total > 0
                 ? "text-emerald-400"
-                : totalBalance < 0
+                : total < 0
                   ? "text-rose-400"
                   : "text-fg"
             }`}
           >
-            {totalBalance >= 0 ? "+" : "−"}
-            {formatCurrency(Math.abs(totalBalance))}
+            {total >= 0 ? "+" : "−"}
+            {formatCurrency(Math.abs(total))}
           </span>
         </div>
       )}
