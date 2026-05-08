@@ -5,8 +5,16 @@ import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import PageTitle from "@/components/layout/PageTitle";
 import PlannerEntryRow from "@/components/planner/PlannerEntryRow";
+import QuickAddBar from "@/components/planner/QuickAddBar";
 import AnimatedCurrency from "@/components/shared/AnimatedCurrency";
 import { useHorizonStore } from "@/components/store/HorizonStore";
+import { formatCurrency } from "@/lib/format";
+import {
+  formatPlannerDayHeader,
+  formatPlannerWeekday,
+  groupEntriesByDay,
+  summarizeEntries,
+} from "@/lib/planner";
 
 const monthFmt = new Intl.DateTimeFormat("en-US", {
   month: "long",
@@ -34,6 +42,20 @@ function labelFromMonthKey(key: string): string {
   return monthFmt.format(new Date(y, m - 1, 1));
 }
 
+function todayIso(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Pick a sensible default date for the quick-add bar: today when looking
+// at the current month, otherwise the 1st of the picked month so a fresh
+// entry doesn't silently jump out of the page the user is staring at.
+function defaultDateForMonth(monthKey: string): string {
+  const today = todayIso();
+  if (monthKeyFromIso(today) === monthKey) return today;
+  return `${monthKey}-01`;
+}
+
 export default function PlannerPage() {
   const { plannerEntries } = useHorizonStore();
   const now = new Date();
@@ -41,36 +63,27 @@ export default function PlannerPage() {
     monthKeyOf(now.getFullYear(), now.getMonth()),
   );
 
-  // Slice the flat entry list down to the picked month. Sort chronologically
-  // so the running balance accrues in date order; we reverse for display so
-  // newest-on-top mirrors Fudget's layout while the per-row balance still
-  // reads "what the budget was at after this entry posted".
-  const monthRows = useMemo(() => {
-    const inMonth = plannerEntries.filter(
-      (e) => monthKeyFromIso(e.date) === monthKey,
-    );
-    const ascending = inMonth.slice().sort((a, b) => {
-      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
-      // Stable secondary by id so same-day entries hold a consistent order.
-      return a.id < b.id ? -1 : 1;
-    });
-    let running = 0;
-    const withBalances = ascending.map((entry) => {
-      running += entry.amount;
-      return { entry, running };
-    });
-    return withBalances.reverse();
-  }, [plannerEntries, monthKey]);
+  const monthEntries = useMemo(
+    () =>
+      plannerEntries.filter((e) => monthKeyFromIso(e.date) === monthKey),
+    [plannerEntries, monthKey],
+  );
 
-  const monthTotal = monthRows.reduce((sum, r) => sum + r.entry.amount, 0);
-  const tone =
-    monthTotal > 0
+  const summary = useMemo(() => summarizeEntries(monthEntries), [monthEntries]);
+  const dayGroups = useMemo(
+    () => groupEntriesByDay(monthEntries),
+    [monthEntries],
+  );
+
+  const balanceTone =
+    summary.balance > 0
       ? "text-emerald-400"
-      : monthTotal < 0
+      : summary.balance < 0
         ? "text-rose-400"
         : "text-fg";
 
   const newHref = `/planner/new?month=${monthKey}`;
+  const quickAddDate = defaultDateForMonth(monthKey);
 
   return (
     <>
@@ -112,24 +125,58 @@ export default function PlannerPage() {
         </div>
 
         <div className="mt-4 rounded-3xl bg-card p-5">
-          <p className="text-xs font-medium uppercase tracking-wide text-fg/60">
-            {labelFromMonthKey(monthKey)} balance
-          </p>
-          <p className="mt-1 text-4xl font-extrabold tabular-nums">
-            <AnimatedCurrency
-              value={monthTotal}
-              toneClassName={tone}
-            />
-          </p>
-          <p className="mt-1 text-xs text-fg/55">
-            {monthRows.length === 0
-              ? "Nothing logged for this month yet."
-              : `${monthRows.length} ${monthRows.length === 1 ? "entry" : "entries"} this month`}
-          </p>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-fg/55">
+                In
+              </p>
+              <p className="mt-1 text-base font-bold tabular-nums text-emerald-400">
+                {formatCurrency(summary.income)}
+              </p>
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-fg/55">
+                Out
+              </p>
+              <p className="mt-1 text-base font-bold tabular-nums text-rose-400">
+                {formatCurrency(summary.expense)}
+              </p>
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-fg/55">
+                Balance
+              </p>
+              <p
+                className={`mt-1 text-base font-bold tabular-nums ${balanceTone}`}
+              >
+                {formatCurrency(summary.balance)}
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 border-t border-fg/10 pt-4 text-center">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-fg/55">
+              {labelFromMonthKey(monthKey)}
+            </p>
+            <p className="mt-1 text-4xl font-extrabold tabular-nums">
+              <AnimatedCurrency
+                value={summary.balance}
+                toneClassName={balanceTone}
+              />
+            </p>
+            <p className="mt-1 text-xs text-fg/55">
+              {monthEntries.length === 0
+                ? "Nothing logged for this month yet."
+                : `${monthEntries.length} ${monthEntries.length === 1 ? "entry" : "entries"} this month`}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <QuickAddBar date={quickAddDate} />
         </div>
       </div>
 
-      {monthRows.length === 0 ? (
+      {dayGroups.length === 0 ? (
         <div className="px-4 py-12 text-center text-fg/55">
           <p>
             Add an entry to start budgeting{" "}
@@ -147,13 +194,49 @@ export default function PlannerPage() {
           </Link>
         </div>
       ) : (
-        <ul className="mt-4 divide-y divide-fg/5 border-y border-fg/5">
-          {monthRows.map(({ entry, running }) => (
-            <li key={entry.id}>
-              <PlannerEntryRow entry={entry} runningBalance={running} />
-            </li>
-          ))}
-        </ul>
+        <div className="mt-4 space-y-5">
+          {dayGroups.map((group) => {
+            const dayTone =
+              group.dayTotal > 0
+                ? "text-emerald-400"
+                : group.dayTotal < 0
+                  ? "text-rose-400"
+                  : "text-fg/60";
+            const daySign =
+              group.dayTotal > 0 ? "+" : group.dayTotal < 0 ? "−" : "";
+            return (
+              <section key={group.date}>
+                <header className="flex items-baseline justify-between px-4 pb-1.5">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wide text-fg/55">
+                      {formatPlannerWeekday(group.date)}
+                    </span>
+                    <span className="text-sm font-semibold text-fg/80">
+                      {formatPlannerDayHeader(group.date)}
+                    </span>
+                  </div>
+                  <span
+                    className={`text-xs font-bold tabular-nums ${dayTone}`}
+                  >
+                    {daySign}
+                    {formatCurrency(Math.abs(group.dayTotal))}
+                  </span>
+                </header>
+                <ul className="divide-y divide-fg/5 border-y border-fg/5">
+                  {group.rows.map(({ entry, running }) => (
+                    <li key={entry.id}>
+                      <PlannerEntryRow
+                        entry={entry}
+                        runningBalance={running}
+                        showDate={false}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
+        </div>
       )}
     </>
   );

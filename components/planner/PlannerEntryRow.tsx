@@ -12,9 +12,17 @@ type Props = {
   // Cumulative budget balance after this entry posted (Fudget-style). When
   // omitted, only the row's own signed amount is rendered.
   runningBalance?: number;
+  // The Planner page groups rows by day with a header that already labels
+  // the date, so callers there suppress the per-row date. Detail callers
+  // outside that group view leave it on by default.
+  showDate?: boolean;
 };
 
-export default function PlannerEntryRow({ entry, runningBalance }: Props) {
+export default function PlannerEntryRow({
+  entry,
+  runningBalance,
+  showDate = true,
+}: Props) {
   const { deletePlannerEntry, markUndoable } = useHorizonStore();
   const isIncome = entry.amount > 0;
   const display = isIncome
@@ -33,13 +41,21 @@ export default function PlannerEntryRow({ entry, runningBalance }: Props) {
     >
       <Link
         href={`/planner/${entry.id}`}
-        className="flex w-full items-center gap-3 bg-card px-4 py-3.5"
+        className="flex w-full items-center gap-3 bg-card px-4 py-3"
       >
+        <span
+          aria-hidden
+          className={`h-8 w-1 shrink-0 rounded-full ${
+            isIncome ? "bg-emerald-400/70" : "bg-rose-400/70"
+          }`}
+        />
         <div className="flex-1 min-w-0">
           <p className="text-base font-semibold truncate">{entry.label}</p>
-          <p className="mt-0.5 text-xs text-fg/55">
-            {formatPlannerDate(entry.date)}
-          </p>
+          {showDate && (
+            <p className="mt-0.5 text-xs text-fg/55">
+              {formatPlannerDate(entry.date)}
+            </p>
+          )}
         </div>
         <div className="text-right shrink-0">
           <span
