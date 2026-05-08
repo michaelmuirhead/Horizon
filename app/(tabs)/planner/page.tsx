@@ -5,8 +5,8 @@ import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import PageTitle from "@/components/layout/PageTitle";
 import PlannerEntryRow from "@/components/planner/PlannerEntryRow";
+import AnimatedCurrency from "@/components/shared/AnimatedCurrency";
 import { useHorizonStore } from "@/components/store/HorizonStore";
-import { formatCurrency } from "@/lib/format";
 
 const monthFmt = new Intl.DateTimeFormat("en-US", {
   month: "long",
@@ -115,8 +115,11 @@ export default function PlannerPage() {
           <p className="text-xs font-medium uppercase tracking-wide text-fg/60">
             {labelFromMonthKey(monthKey)} balance
           </p>
-          <p className={`mt-1 text-4xl font-extrabold tabular-nums ${tone}`}>
-            {formatCurrency(monthTotal)}
+          <p className="mt-1 text-4xl font-extrabold tabular-nums">
+            <AnimatedCurrency
+              value={monthTotal}
+              toneClassName={tone}
+            />
           </p>
           <p className="mt-1 text-xs text-fg/55">
             {monthRows.length === 0
