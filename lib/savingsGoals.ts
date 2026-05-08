@@ -3,6 +3,12 @@
 // signed amount: positive deposits add to the saved total, negative ones
 // (withdrawals) subtract. The running sum is the goal's current balance.
 
+import type {
+  BudgetCategory,
+  BudgetCategoryGroup,
+  CategoryTarget,
+} from "./budget";
+
 export type SavingsContribution = {
   id: string;
   // ISO YYYY-MM-DD when the deposit / withdrawal happened.
@@ -27,7 +33,16 @@ export type SavingsGoal = {
   contributions: SavingsContribution[];
   // ISO YYYY-MM-DD the goal was created — used as a sort fallback.
   createdAt: string;
+  // Id of the budget category mirrored into the "Goals" group so the user
+  // can assign money to this goal from the Budget tab. Set automatically
+  // when the goal is created and kept in sync on rename/delete.
+  categoryId?: string;
 };
+
+// Display name and stable id we use when looking for or creating the
+// "Goals" budget group that mirrors a user's savings goals.
+export const SAVINGS_GOALS_GROUP_ID = "goals";
+export const SAVINGS_GOALS_GROUP_NAME = "Goals";
 
 export const sampleSavingsGoals: SavingsGoal[] = [];
 
@@ -126,4 +141,83 @@ export function summarizeGoals(goals: SavingsGoal[]): SavingsSummary {
     totalTarget,
     reachedCount: reached,
   };
+}
+
+// Translate a savings goal's amount + due-date pair into the matching
+// `CategoryTarget` shape: a "$X by Y" sinking-fund target when the user
+// picked a due date, or a "refill to $X" target otherwise. Returns null
+// for goals with a non-positive target so we don't pin a meaningless
+// target to the budget category.
+export function targetForSavingsGoal(goal: SavingsGoal): CategoryTarget | null {
+  if (!Number.isFinite(goal.targetAmount) || goal.targetAmount <= 0) return null;
+  if (goal.dueDate && goal.dueDate.trim() !== "") {
+    return {
+      kind: "by-date",
+      amount: goal.targetAmount,
+      dueDate: goal.dueDate,
+    };
+  }
+  return { kind: "refill", amount: goal.targetAmount };
+}
+
+// Find the existing "Goals" group (matching by stable id first, then by
+// case-insensitive name) and append the supplied category to it. Falls
+// back to creating a fresh Goals group at the end when the user has none
+// — keeps the auto-mirror working even after they reorganise their budget.
+export function ensureGoalsGroupHasCategory(
+  groups: BudgetCategoryGroup[],
+  category: BudgetCategory,
+): BudgetCategoryGroup[] {
+  const idx = groups.findIndex(
+    (g) =>
+      g.id === SAVINGS_GOALS_GROUP_ID ||
+      g.name.toLowerCase() === SAVINGS_GOALS_GROUP_NAME.toLowerCase(),
+  );
+  if (idx < 0) {
+    return [
+      ...groups,
+      {
+        id: SAVINGS_GOALS_GROUP_ID,
+        name: SAVINGS_GOALS_GROUP_NAME,
+        categories: [category],
+      },
+    ];
+  }
+  return groups.map((g, i) =>
+    i === idx ? { ...g, categories: [...g.categories, category] } : g,
+  );
+}
+
+// Apply a partial rename / re-emoji to the linked category in place. A no-op
+// when the categoryId doesn't match anything (the user might have deleted
+// the budget category manually).
+export function syncSavingsCategory(
+  groups: BudgetCategoryGroup[],
+  categoryId: string,
+  patch: { name?: string; emoji?: string | undefined },
+): BudgetCategoryGroup[] {
+  return groups.map((g) => ({
+    ...g,
+    categories: g.categories.map((c) => {
+      if (c.id !== categoryId) return c;
+      const next: BudgetCategory = { ...c };
+      if (patch.name !== undefined) next.name = patch.name;
+      if (patch.emoji !== undefined) {
+        const trimmed = patch.emoji.trim();
+        if (trimmed === "") delete next.emoji;
+        else next.emoji = trimmed;
+      }
+      return next;
+    }),
+  }));
+}
+
+export function removeSavingsCategoryFromGroups(
+  groups: BudgetCategoryGroup[],
+  categoryId: string,
+): BudgetCategoryGroup[] {
+  return groups.map((g) => ({
+    ...g,
+    categories: g.categories.filter((c) => c.id !== categoryId),
+  }));
 }
