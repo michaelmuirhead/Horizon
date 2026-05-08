@@ -29,14 +29,16 @@ export default function PlannerEntryRow({
   showDate = true,
   dragHandle,
 }: Props) {
-  const { deletePlannerEntry, markUndoable } = useHorizonStore();
+  const { deletePlannerEntry } = useHorizonStore();
   const isIncome = entry.amount > 0;
   const display = isIncome
     ? `+${formatCurrency(entry.amount)}`
     : `−${formatCurrency(Math.abs(entry.amount))}`;
 
   function handleDelete() {
-    markUndoable(`Entry "${entry.label}" deleted`);
+    // No undo toast for Planner entries — the undo banner sits over the
+    // quick-add bar and other rows, and a Planner delete is cheap to
+    // re-create from the inline form.
     deletePlannerEntry(entry.id);
   }
 
