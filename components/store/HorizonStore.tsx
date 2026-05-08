@@ -25,6 +25,7 @@ import {
 } from "@/lib/accounts";
 import {
   type Assignments,
+  type BudgetCategory,
   type BudgetCategoryGroup,
   type CategoryTarget,
   type CategoryTargets,
@@ -49,7 +50,11 @@ import { type WishlistItem, sampleWishlist } from "@/lib/wishlist";
 import {
   type SavingsContribution,
   type SavingsGoal,
+  ensureGoalsGroupHasCategory,
+  removeSavingsCategoryFromGroups,
   sampleSavingsGoals,
+  syncSavingsCategory,
+  targetForSavingsGoal,
 } from "@/lib/savingsGoals";
 import { type TransactionTemplate, sampleTemplates } from "@/lib/templates";
 import {
@@ -236,7 +241,12 @@ type Action =
   | {
       type: "update_savings_goal";
       id: string;
-      patch: Partial<Omit<SavingsGoal, "id" | "contributions" | "createdAt">>;
+      patch: Partial<
+        Omit<
+          SavingsGoal,
+          "id" | "contributions" | "createdAt" | "categoryId"
+        >
+      >;
     }
   | { type: "delete_savings_goal"; id: string }
   | {
@@ -614,23 +624,109 @@ function reducer(state: State, action: Action): State {
         ...state,
         wishlist: state.wishlist.filter((w) => w.id !== action.id),
       };
-    case "add_savings_goal":
+    case "add_savings_goal": {
+      // Mirror the goal into a fresh budget category in the "Goals" group
+      // so the user can assign money to it from the Budget tab. The
+      // category id matches what we stamp onto the goal so the two stay
+      // findable from each other.
+      const categoryId = action.goal.categoryId ?? makeId();
+      const category: BudgetCategory = {
+        id: categoryId,
+        name: action.goal.name,
+        ...(action.goal.emoji ? { emoji: action.goal.emoji } : {}),
+      };
+      const groups = ensureGoalsGroupHasCategory(state.groups, category);
+      const target = targetForSavingsGoal(action.goal);
+      const targets = target
+        ? { ...state.targets, [categoryId]: target }
+        : state.targets;
       return {
         ...state,
-        savingsGoals: [action.goal, ...state.savingsGoals],
+        savingsGoals: [
+          { ...action.goal, categoryId },
+          ...state.savingsGoals,
+        ],
+        groups,
+        targets,
       };
-    case "update_savings_goal":
+    }
+    case "update_savings_goal": {
+      const existing = state.savingsGoals.find((g) => g.id === action.id);
+      if (!existing) return state;
+      const next: SavingsGoal = { ...existing, ...action.patch };
+      const categoryId = existing.categoryId;
+      const savingsGoals = state.savingsGoals.map((g) =>
+        g.id === action.id ? next : g,
+      );
+      // Goals from before the budget-sync feature won't have a categoryId;
+      // there's nothing to mirror so the simple update is enough.
+      if (!categoryId) {
+        return { ...state, savingsGoals };
+      }
+      let groups = state.groups;
+      let transactions = state.transactions;
+      if (action.patch.name !== undefined || action.patch.emoji !== undefined) {
+        const oldName = existing.name;
+        groups = syncSavingsCategory(groups, categoryId, {
+          name: action.patch.name,
+          emoji: action.patch.emoji,
+        });
+        if (
+          action.patch.name !== undefined &&
+          action.patch.name !== oldName
+        ) {
+          // Existing transactions tagged with the old category name need
+          // to follow the rename so they continue to roll up correctly.
+          const newName = action.patch.name;
+          transactions = state.transactions.map((t) => {
+            const splits = t.splits?.map((s) =>
+              s.category === oldName ? { ...s, category: newName } : s,
+            );
+            const updated: Transaction = { ...t };
+            if (t.category === oldName) updated.category = newName;
+            if (splits) updated.splits = splits;
+            return updated;
+          });
+        }
+      }
+      let targets = state.targets;
+      if (
+        action.patch.targetAmount !== undefined ||
+        action.patch.dueDate !== undefined
+      ) {
+        const t = targetForSavingsGoal(next);
+        const nextTargets = { ...state.targets };
+        if (t) nextTargets[categoryId] = t;
+        else delete nextTargets[categoryId];
+        targets = nextTargets;
+      }
       return {
         ...state,
-        savingsGoals: state.savingsGoals.map((g) =>
-          g.id === action.id ? { ...g, ...action.patch } : g,
-        ),
+        savingsGoals,
+        groups,
+        targets,
+        transactions,
       };
-    case "delete_savings_goal":
+    }
+    case "delete_savings_goal": {
+      const existing = state.savingsGoals.find((g) => g.id === action.id);
+      const savingsGoals = state.savingsGoals.filter(
+        (g) => g.id !== action.id,
+      );
+      if (!existing?.categoryId) {
+        return { ...state, savingsGoals };
+      }
+      const cid = existing.categoryId;
+      const ids = new Set([cid]);
       return {
         ...state,
-        savingsGoals: state.savingsGoals.filter((g) => g.id !== action.id),
+        savingsGoals,
+        groups: removeSavingsCategoryFromGroups(state.groups, cid),
+        assignments: pruneAssignments(state.assignments, ids),
+        targets: pruneTargets(state.targets, ids),
+        pinnedCategoryIds: state.pinnedCategoryIds.filter((id) => id !== cid),
       };
+    }
     case "add_savings_contribution":
       return {
         ...state,
@@ -1201,11 +1297,16 @@ type Ctx = {
   deleteWishlistItem: (id: string) => void;
   savingsGoals: SavingsGoal[];
   addSavingsGoal: (
-    goal: Omit<SavingsGoal, "id" | "contributions" | "createdAt">,
+    goal: Omit<
+      SavingsGoal,
+      "id" | "contributions" | "createdAt" | "categoryId"
+    >,
   ) => void;
   updateSavingsGoal: (
     id: string,
-    patch: Partial<Omit<SavingsGoal, "id" | "contributions" | "createdAt">>,
+    patch: Partial<
+      Omit<SavingsGoal, "id" | "contributions" | "createdAt" | "categoryId">
+    >,
   ) => void;
   deleteSavingsGoal: (id: string) => void;
   addSavingsContribution: (
@@ -1853,7 +1954,12 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addSavingsGoal = useCallback(
-    (input: Omit<SavingsGoal, "id" | "contributions" | "createdAt">) => {
+    (
+      input: Omit<
+        SavingsGoal,
+        "id" | "contributions" | "createdAt" | "categoryId"
+      >,
+    ) => {
       dispatch({
         type: "add_savings_goal",
         goal: {
@@ -1869,7 +1975,9 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
   const updateSavingsGoal = useCallback(
     (
       id: string,
-      patch: Partial<Omit<SavingsGoal, "id" | "contributions" | "createdAt">>,
+      patch: Partial<
+        Omit<SavingsGoal, "id" | "contributions" | "createdAt" | "categoryId">
+      >,
     ) => {
       dispatch({ type: "update_savings_goal", id, patch });
     },

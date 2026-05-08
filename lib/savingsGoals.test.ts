@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
+import type { BudgetCategoryGroup } from "./budget";
 import {
   daysUntilDue,
+  ensureGoalsGroupHasCategory,
   isReached,
   monthlyPaceNeeded,
   progressPct,
   remainingAmount,
+  removeSavingsCategoryFromGroups,
   savedAmount,
   sortGoalsByProgress,
   summarizeGoals,
+  syncSavingsCategory,
+  targetForSavingsGoal,
   type SavingsGoal,
 } from "./savingsGoals";
 
@@ -162,5 +167,105 @@ describe("summarizeGoals", () => {
     expect(s.totalTarget).toBe(700);
     expect(s.totalSaved).toBe(350);
     expect(s.reachedCount).toBe(1);
+  });
+});
+
+describe("targetForSavingsGoal", () => {
+  it("returns a by-date target when the goal has a due date", () => {
+    const t = targetForSavingsGoal(
+      goal({ targetAmount: 1200, dueDate: "2026-12-01" }),
+    );
+    expect(t).toEqual({
+      kind: "by-date",
+      amount: 1200,
+      dueDate: "2026-12-01",
+    });
+  });
+
+  it("falls back to refill when no due date is set", () => {
+    expect(targetForSavingsGoal(goal({ targetAmount: 500 }))).toEqual({
+      kind: "refill",
+      amount: 500,
+    });
+  });
+
+  it("returns null for non-positive targets", () => {
+    expect(targetForSavingsGoal(goal({ targetAmount: 0 }))).toBeNull();
+  });
+});
+
+describe("ensureGoalsGroupHasCategory", () => {
+  const cat = { id: "cat-1", name: "Vacation" };
+
+  it("appends to an existing Goals group identified by id", () => {
+    const groups: BudgetCategoryGroup[] = [
+      { id: "bills", name: "Bills", categories: [] },
+      {
+        id: "goals",
+        name: "Goals",
+        categories: [{ id: "old", name: "Education" }],
+      },
+    ];
+    const next = ensureGoalsGroupHasCategory(groups, cat);
+    const goals = next.find((g) => g.id === "goals")!;
+    expect(goals.categories.map((c) => c.id)).toEqual(["old", "cat-1"]);
+    expect(next).toHaveLength(2);
+  });
+
+  it("matches the Goals group by case-insensitive name", () => {
+    const groups: BudgetCategoryGroup[] = [
+      { id: "custom", name: "GOALS", categories: [] },
+    ];
+    const next = ensureGoalsGroupHasCategory(groups, cat);
+    expect(next[0].categories).toContainEqual(cat);
+  });
+
+  it("creates the group when none exists", () => {
+    const next = ensureGoalsGroupHasCategory([], cat);
+    expect(next).toEqual([
+      { id: "goals", name: "Goals", categories: [cat] },
+    ]);
+  });
+});
+
+describe("syncSavingsCategory", () => {
+  const groups: BudgetCategoryGroup[] = [
+    {
+      id: "goals",
+      name: "Goals",
+      categories: [{ id: "cat-1", name: "Trip", emoji: "🏖️" }],
+    },
+  ];
+
+  it("renames the matching category", () => {
+    const next = syncSavingsCategory(groups, "cat-1", { name: "Spain Trip" });
+    expect(next[0].categories[0].name).toBe("Spain Trip");
+  });
+
+  it("clears the emoji when set to an empty string", () => {
+    const next = syncSavingsCategory(groups, "cat-1", { emoji: "" });
+    expect(next[0].categories[0].emoji).toBeUndefined();
+  });
+
+  it("ignores categories that don't match", () => {
+    const next = syncSavingsCategory(groups, "missing", { name: "Nope" });
+    expect(next[0].categories[0].name).toBe("Trip");
+  });
+});
+
+describe("removeSavingsCategoryFromGroups", () => {
+  it("filters the matching category out of every group", () => {
+    const groups: BudgetCategoryGroup[] = [
+      {
+        id: "goals",
+        name: "Goals",
+        categories: [
+          { id: "keep", name: "Keep" },
+          { id: "drop", name: "Drop" },
+        ],
+      },
+    ];
+    const next = removeSavingsCategoryFromGroups(groups, "drop");
+    expect(next[0].categories.map((c) => c.id)).toEqual(["keep"]);
   });
 });
