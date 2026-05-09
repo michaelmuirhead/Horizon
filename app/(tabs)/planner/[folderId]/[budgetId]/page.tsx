@@ -131,7 +131,15 @@ export default function PlannerBudgetPage({
         </ul>
       )}
 
-      <div aria-hidden className="h-24" />
+      {/* Tail spacer that clears the fixed Income/Expenses/Balance +
+          Add Income/Add Expense strip stacked above the bottom nav.
+          The strip's own pb already covers the nav inset, so we only
+          need to size for the strip's content + a small buffer plus
+          the iPhone home-indicator safe-area. */}
+      <div
+        aria-hidden
+        className="h-[calc(env(safe-area-inset-bottom)+180px)]"
+      />
 
       <div className="fixed inset-x-0 bottom-0 z-30 md:pl-20">
         <div className="mx-auto max-w-md md:max-w-3xl lg:max-w-5xl bg-page/95 backdrop-blur border-t border-fg/10 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+88px)] md:pb-6 space-y-3">
