@@ -14,11 +14,6 @@ export type PlannerFormValues = Omit<PlannerEntry, "id" | "order">;
 
 type Direction = "expense" | "income";
 
-function todayIso(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 type Props = {
   initial?: PlannerEntry;
   // Required for new entries — which budget to add into. When `initial`
@@ -31,9 +26,27 @@ type Props = {
   saveLabel: string;
   onSave: (values: PlannerFormValues) => void;
   onDelete?: () => void;
-  // Date the form picker starts on for new entries. Defaults to today.
-  defaultDate?: string;
 };
+
+const amountFmt = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+// Treats the input as a stream of cents — every digit shifts the
+// decimal point right. Typing "3" → "0.03", "300" → "3.00",
+// "30000" → "300.00". Capped at 12 digits so the cents representation
+// can't overflow Number.MAX_SAFE_INTEGER.
+function digitsToDisplay(digits: string): string {
+  if (digits === "") return "";
+  const cents = Number.parseInt(digits, 10);
+  if (!Number.isFinite(cents)) return "";
+  return amountFmt.format(cents / 100);
+}
+
+function digitsFromValue(value: string): string {
+  return value.replace(/\D+/g, "").slice(0, 12);
+}
 
 export default function PlannerForm({
   initial,
@@ -42,7 +55,6 @@ export default function PlannerForm({
   saveLabel,
   onSave,
   onDelete,
-  defaultDate,
 }: Props) {
   const initialDirection: Direction = initial
     ? initial.amount >= 0
@@ -52,27 +64,31 @@ export default function PlannerForm({
 
   const [direction, setDirection] = useState<Direction>(initialDirection);
   const [label, setLabel] = useState<string>(initial?.label ?? "");
-  const [amount, setAmount] = useState<string>(
-    initial ? Math.abs(initial.amount).toString() : "",
+  const [amountDigits, setAmountDigits] = useState<string>(
+    initial ? Math.round(Math.abs(initial.amount) * 100).toString() : "",
   );
-  const [date, setDate] = useState<string>(
-    initial?.date ?? defaultDate ?? todayIso(),
-  );
+  // Empty string = "no date set". The native date input renders the
+  // browser's MM/DD/YYYY placeholder when value="" so we don't need a
+  // separate "set date" toggle.
+  const [date, setDate] = useState<string>(initial?.date ?? "");
   const [paid, setPaid] = useState<boolean>(initial?.paid ?? false);
 
-  const valid = label.trim() !== "" && parseFloat(amount) > 0;
+  const amountCents =
+    amountDigits === "" ? 0 : Number.parseInt(amountDigits, 10);
+  const valid = label.trim() !== "" && amountCents > 0;
+  const amountDisplay = digitsToDisplay(amountDigits);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!valid) return;
-    const magnitude = parseFloat(amount);
+    const magnitude = amountCents / 100;
     const signed = direction === "income" ? magnitude : -magnitude;
     const targetBudgetId = initial?.budgetId ?? budgetId ?? "";
     onSave({
       budgetId: targetBudgetId,
       label: label.trim(),
       amount: signed,
-      date,
+      date: date || undefined,
       paid,
     });
   }
@@ -96,13 +112,16 @@ export default function PlannerForm({
             </span>
             <TextInput
               id="planner-amount"
-              type="number"
+              type="text"
+              // decimal keypad on iOS; plain text avoids the browser
+              // imposing its own number formatting on top of ours.
               inputMode="decimal"
-              step="0.01"
-              min="0"
+              autoComplete="off"
               placeholder="0.00"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              value={amountDisplay}
+              onChange={(e) =>
+                setAmountDigits(digitsFromValue(e.target.value))
+              }
               required
               className="max-w-[160px]"
             />
@@ -118,6 +137,10 @@ export default function PlannerForm({
             onChange={(e) => setLabel(e.target.value)}
             required
             autoComplete="off"
+            // iOS / Android soft keyboards capitalise each word as the
+            // user types, matching the expected ledger style ("Born
+            // Free" rather than "born free").
+            autoCapitalize="words"
           />
         </FormRow>
 
@@ -127,7 +150,9 @@ export default function PlannerForm({
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            required
+            // Native date input shows MM/DD/YYYY when empty. Leaving the
+            // field blank just omits the date from the saved entry.
+            className="max-w-[160px]"
           />
         </FormRow>
 
@@ -140,9 +165,7 @@ export default function PlannerForm({
               onChange={(e) => setPaid(e.target.checked)}
               className="h-5 w-5 rounded border-fg/20 bg-card accent-accent"
             />
-            <span className="text-fg/65">
-              {paid ? "Cleared" : "Not yet"}
-            </span>
+            <span className="text-fg/65">{paid ? "Cleared" : "Not yet"}</span>
           </label>
         </FormRow>
       </FormGroup>

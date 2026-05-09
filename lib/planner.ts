@@ -27,7 +27,11 @@ export type PlannerEntry = {
   label: string;
   // Signed: positive = income, negative = expense.
   amount: number;
-  date: string; // ISO YYYY-MM-DD
+  // ISO YYYY-MM-DD. Optional — entries without a planned date render
+  // a "Date" placeholder in the ledger and don't surface on the
+  // calendar. Stored as undefined when unset; legacy "" values are
+  // tolerated by callers via `date || undefined`.
+  date?: string;
   // Whether this planned movement has cleared. Lets the budget UI show
   // "of which $X has actually posted." Optional; treat undefined as false.
   paid?: boolean;
@@ -69,7 +73,11 @@ function sortEntriesForBudget(entries: PlannerEntry[]): PlannerEntry[] {
     const ao = a.order ?? Number.MAX_SAFE_INTEGER;
     const bo = b.order ?? Number.MAX_SAFE_INTEGER;
     if (ao !== bo) return ao - bo;
-    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    // Undated entries land last among same-order rows so they don't
+    // disrupt a user-curated chronological flow.
+    const ad = a.date ?? "9999-99-99";
+    const bd = b.date ?? "9999-99-99";
+    if (ad !== bd) return ad < bd ? -1 : 1;
     return a.id < b.id ? -1 : 1;
   });
 }
