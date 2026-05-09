@@ -25,6 +25,28 @@ type Props = {
   defaultDirection?: Direction;
 };
 
+const amountFmt = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+// Treats the input as a stream of cents — every digit shifts the
+// decimal point right. Typing "3" → "0.03", "300" → "3.00",
+// "30000" → "300.00". Limits to 12 digits so we don't overflow the
+// formatter on accidental long pastes.
+function digitsToDisplay(digits: string): string {
+  if (digits === "") return "";
+  const cents = Number.parseInt(digits, 10);
+  if (!Number.isFinite(cents)) return "";
+  return amountFmt.format(cents / 100);
+}
+
+function digitsFromValue(value: string): string {
+  // Drop everything that isn't a digit and clamp length so the cents
+  // representation can't overflow Number.MAX_SAFE_INTEGER.
+  return value.replace(/\D+/g, "").slice(0, 12);
+}
+
 export default function PlannerForm({
   initial,
   budgetId,
@@ -41,25 +63,28 @@ export default function PlannerForm({
 
   const [direction, setDirection] = useState<Direction>(initialDirection);
   const [label, setLabel] = useState<string>(initial?.label ?? "");
-  const [amount, setAmount] = useState<string>(
-    initial ? Math.abs(initial.amount).toString() : "",
+  const [amountDigits, setAmountDigits] = useState<string>(
+    initial
+      ? Math.round(Math.abs(initial.amount) * 100).toString()
+      : "",
   );
-  const [hasDate, setHasDate] = useState<boolean>(Boolean(initial?.date));
   const [date, setDate] = useState<string>(initial?.date ?? "");
   const [paid, setPaid] = useState<boolean>(Boolean(initial?.paid));
 
-  const valid = label.trim() !== "" && parseFloat(amount) > 0;
+  const amountCents = amountDigits === "" ? 0 : Number.parseInt(amountDigits, 10);
+  const valid = label.trim() !== "" && amountCents > 0;
+  const amountDisplay = digitsToDisplay(amountDigits);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!valid) return;
-    const magnitude = parseFloat(amount);
+    const magnitude = amountCents / 100;
     const signed = direction === "income" ? magnitude : -magnitude;
     onSave({
       budgetId,
       label: label.trim(),
       amount: signed,
-      date: hasDate && date ? date : undefined,
+      date: date || undefined,
       paid: paid || undefined,
     });
   }
@@ -83,13 +108,16 @@ export default function PlannerForm({
             </span>
             <TextInput
               id="planner-amount"
-              type="number"
+              type="text"
+              // decimal keyboard on iOS; plain text avoids the browser
+              // imposing its own formatting on top of ours.
               inputMode="decimal"
-              step="0.01"
-              min="0"
+              autoComplete="off"
               placeholder="0.00"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              value={amountDisplay}
+              onChange={(e) =>
+                setAmountDigits(digitsFromValue(e.target.value))
+              }
               required
               className="max-w-[160px]"
             />
@@ -105,30 +133,24 @@ export default function PlannerForm({
             onChange={(e) => setLabel(e.target.value)}
             required
             autoComplete="off"
+            // iOS / Android soft keyboards capitalise each word as the
+            // user types, matching the expected ledger style ("Born
+            // Free" rather than "born free").
+            autoCapitalize="words"
           />
         </FormRow>
 
         <FormRow label="Date" htmlFor="planner-date">
-          <span className="flex items-center justify-end gap-2">
-            <label className="flex items-center gap-1.5 text-xs font-semibold text-fg/55">
-              <input
-                type="checkbox"
-                checked={hasDate}
-                onChange={(e) => setHasDate(e.target.checked)}
-                className="accent-accent"
-              />
-              Set
-            </label>
-            {hasDate && (
-              <TextInput
-                id="planner-date"
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="max-w-[160px]"
-              />
-            )}
-          </span>
+          <TextInput
+            id="planner-date"
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            // Native date input shows an MM/DD/YYYY placeholder when
+            // empty; leaving the field blank simply omits the date
+            // from the saved entry.
+            className="max-w-[160px]"
+          />
         </FormRow>
 
         <FormRow label="Paid" htmlFor="planner-paid">
