@@ -28,32 +28,31 @@ runConfig:
   # Generous request timeout; SSR responses should be much faster than this.
   timeoutSeconds: 60
 
-# Add `env:` blocks here when you need build- or runtime-time config. Secrets
-# go through Secret Manager; see Firebase docs for the syntax.
-#
 # The Cloud Sync feature reads NEXT_PUBLIC_FIREBASE_* values at build time.
-# Wire them up here so the deployed app can talk to your Firebase project:
+# These specific values are public per Firebase docs (security is enforced by
+# firestore.rules + the Authorized Domains allowlist), so they're safe to
+# commit directly. Truly secret values would go in Secret Manager instead.
 #
-# env:
-#   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
-#     value: your-public-api-key
-#     availability: [BUILD]
-#   - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
-#     value: your-project.firebaseapp.com
-#     availability: [BUILD]
-#   - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
-#     value: your-project-id
-#     availability: [BUILD]
-#   - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
-#     value: your-project.firebasestorage.app
-#     availability: [BUILD]
-#   - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
-#     value: "1234567890"
-#     availability: [BUILD]
-#   - variable: NEXT_PUBLIC_FIREBASE_APP_ID
-#     value: 1:1234567890:web:abc123
-#     availability: [BUILD]
-#
-# These specific values are public per Firebase docs (security is enforced
-# by Firestore rules + auth domain allowlists), so they're safe to commit
-# directly. Truly secret values would go in Secret Manager instead.
+# Three values are prefilled from the horizon-fc7b8 project. Replace the three
+# PASTE_*_HERE placeholders with the matching values from
+# Firebase Console → Project settings → General → Your apps → Web app → Config.
+# (Same six values as `.env.local`.)
+env:
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: PASTE_apiKey_HERE
+    availability: [BUILD]
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: horizon-fc7b8.firebaseapp.com
+    availability: [BUILD]
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: horizon-fc7b8
+    availability: [BUILD]
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: horizon-fc7b8.firebasestorage.app
+    availability: [BUILD]
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "PASTE_messagingSenderId_HERE"
+    availability: [BUILD]
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: PASTE_appId_HERE
+    availability: [BUILD]

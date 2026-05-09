@@ -1,0 +1,83 @@
+rules_version = '2';
+
+// Firestore security rules for Horizon.
+//
+// These mirror the access patterns in lib/cloudSync.ts:
+//
+//   • users/{uid}/budgets/{budgetId}       — per-user sync (owner only)
+//   • households/{hid}                     — shared household doc
+//   • households/{hid}/budget/state        — shared budget payload
+//   • joinCodes/{code}                     — invite-code lookup
+//
+// Paste this whole file into the Firebase console at:
+//   https://console.firebase.google.com/u/0/project/horizon-fc7b8/firestore/databases/-default-/security/rules
+// or deploy from the repo root with:
+//   firebase deploy --only firestore:rules
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Per-user budgets ───────────────────────────────────────────────
+    // Each user owns everything under their own users/{uid} subtree.
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == uid;
+    }
+
+    // ─── Households (shared budgets) ────────────────────────────────────
+    match /households/{hid} {
+
+      // Anyone in memberUids can see the household doc.
+      allow read: if request.auth != null
+                  && request.auth.uid in resource.data.memberUids;
+
+      // Creating a household: caller must list themselves as the sole
+      // owner and member. Prevents someone from creating a household and
+      // pre-loading other people into it.
+      allow create: if request.auth != null
+                    && request.resource.data.ownerUid == request.auth.uid
+                    && request.resource.data.memberUids.size() == 1
+                    && request.resource.data.memberUids[0] == request.auth.uid;
+
+      // Updates are allowed in two cases:
+      //   1. The caller is already a member — they can change anything.
+      //      (Today the only thing the client writes is memberUids on
+      //      leave, but this keeps the door open for future fields.)
+      //   2. A non-member is JOINING via a join code: the only change
+      //      allowed is appending their own uid to memberUids. No other
+      //      field may change, ownerUid in particular stays put.
+      allow update: if request.auth != null && (
+        request.auth.uid in resource.data.memberUids
+        || (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberUids'])
+          && request.resource.data.memberUids.hasAll(resource.data.memberUids)
+          && request.resource.data.memberUids.size() == resource.data.memberUids.size() + 1
+          && request.auth.uid in request.resource.data.memberUids
+          && !(request.auth.uid in resource.data.memberUids)
+        )
+      );
+
+      // Only the owner can delete the household.
+      allow delete: if request.auth != null
+                    && request.auth.uid == resource.data.ownerUid;
+
+      // All sub-paths (budget/state, future subcollections) — members
+      // only. Reads the parent doc to check membership.
+      match /{document=**} {
+        allow read, write: if request.auth != null
+                           && request.auth.uid in
+                              get(/databases/$(database)/documents/households/$(hid)).data.memberUids;
+      }
+    }
+
+    // ─── Join codes ─────────────────────────────────────────────────────
+    // The code itself is the secret. Any signed-in user can resolve a
+    // code (so the join flow works) and any signed-in user can create
+    // one (so household owners can mint invites). We don't allow
+    // updates or deletes from clients.
+    match /joinCodes/{code} {
+      allow read, create: if request.auth != null;
+      allow update, delete: if false;
+    }
+  }
+}
