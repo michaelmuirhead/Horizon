@@ -62,10 +62,10 @@ export default function PlannerEntryRow({
       ? `− ${formatCurrency(Math.abs(runningBalance))}`
       : `+ ${formatCurrency(runningBalance)}`;
 
-  // Swipe-left to toggle paid. We track the gesture inline so the row
-  // doesn't need a heavier swipe wrapper — only the link/center area
-  // listens, which keeps the grip's drag-to-reorder and the kebab
-  // menu untouched.
+  // Swipe horizontally to act on the row inline. Left = toggle paid,
+  // right = delete. We track the gesture inline so the row doesn't
+  // need a heavier wrapper — only the link/center area listens, which
+  // keeps the grip's drag-to-reorder and the kebab menu untouched.
   const [dragX, setDragX] = useState(0);
   const [animating, setAnimating] = useState(true);
   const startXRef = useRef<number | null>(null);
@@ -73,11 +73,13 @@ export default function PlannerEntryRow({
   const lockedRef = useRef(false);
   const suppressClickRef = useRef(false);
 
-  function endSwipe(commit: boolean) {
-    if (commit) {
-      // Trigger the toggle next frame so the snap-back animation is
-      // visible before paid state flips and the row re-renders.
+  function endSwipe(action: "paid" | "delete" | null) {
+    if (action === "paid") {
+      // Fire next frame so the snap-back animation is visible before
+      // paid state flips and the row re-renders.
       requestAnimationFrame(() => onTogglePaid());
+    } else if (action === "delete") {
+      requestAnimationFrame(() => onDelete());
     }
     setAnimating(true);
     setDragX(0);
@@ -102,9 +104,9 @@ export default function PlannerEntryRow({
       if (Math.abs(dx) < HORIZONTAL_LOCK && Math.abs(dy) < HORIZONTAL_LOCK) {
         return;
       }
-      if (Math.abs(dy) > Math.abs(dx) || dx > 0) {
-        // Vertical scroll or rightward drag — bow out so the page can
-        // scroll normally and the link click still fires on release.
+      if (Math.abs(dy) > Math.abs(dx)) {
+        // Vertical scroll — bow out so the page can scroll normally
+        // and the link click still fires on release.
         startXRef.current = null;
         startYRef.current = null;
         return;
@@ -117,15 +119,20 @@ export default function PlannerEntryRow({
         // is gone; we still get pointermove via touch-action: pan-y.
       }
     }
-    const offset = Math.max(-MAX_PULL_PX, Math.min(0, dx));
+    const offset = Math.max(-MAX_PULL_PX, Math.min(MAX_PULL_PX, dx));
     setDragX(offset);
   }
 
   function onPointerUp() {
     if (lockedRef.current) {
       suppressClickRef.current = true;
-      const commit = dragX <= -COMMIT_PX;
-      endSwipe(commit);
+      const action: "paid" | "delete" | null =
+        dragX <= -COMMIT_PX
+          ? "paid"
+          : dragX >= COMMIT_PX
+            ? "delete"
+            : null;
+      endSwipe(action);
     } else {
       setAnimating(true);
       startXRef.current = null;
@@ -147,23 +154,42 @@ export default function PlannerEntryRow({
     touchAction: "pan-y",
   };
 
-  const revealLabel = paid ? "Unpaid" : "Paid";
-  const revealActive = dragX <= -COMMIT_PX;
+  const paidLabel = paid ? "Unpaid" : "Paid";
+  // Each reveal pane intensifies once the user has dragged past the
+  // commit threshold so the gesture has a clear "you're going to do
+  // this" tipping point before the user releases.
+  const paidActive = dragX <= -COMMIT_PX;
+  const deleteActive = dragX >= COMMIT_PX;
+  const showPaidPane = dragX < 0;
+  const showDeletePane = dragX > 0;
 
   return (
     <div className="flex w-full items-stretch bg-card">
       {dragHandle}
       <div className="relative flex-1 min-w-0 overflow-hidden">
+        {/* Right edge: revealed when user swipes LEFT. */}
         <div
           aria-hidden
-          className={`absolute inset-y-0 right-0 flex w-28 items-center justify-end pr-4 text-sm font-bold transition-colors ${
-            revealActive
+          className={`absolute inset-y-0 right-0 flex w-28 items-center justify-end pr-4 text-sm font-bold transition-opacity ${
+            paidActive
               ? "bg-amber-500/30 text-amber-100"
               : "bg-amber-500/15 text-amber-300/80"
-          }`}
+          } ${showPaidPane ? "opacity-100" : "opacity-0"}`}
         >
           <Check size={14} className="mr-1" strokeWidth={2.6} />
-          {revealLabel}
+          {paidLabel}
+        </div>
+        {/* Left edge: revealed when user swipes RIGHT. */}
+        <div
+          aria-hidden
+          className={`absolute inset-y-0 left-0 flex w-28 items-center justify-start pl-4 text-sm font-bold transition-opacity ${
+            deleteActive
+              ? "bg-rose-500/40 text-rose-100"
+              : "bg-rose-500/20 text-rose-200/80"
+          } ${showDeletePane ? "opacity-100" : "opacity-0"}`}
+        >
+          <Trash2 size={14} className="mr-1" strokeWidth={2.6} />
+          Delete
         </div>
         <Link
           href={href}
