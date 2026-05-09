@@ -45,7 +45,14 @@ import {
   resolveJoinCode,
 } from "@/lib/cloudSync";
 import { setCurrency as setCurrencyFormatter } from "@/lib/format";
-import { type PlannerEntry, samplePlannerEntries } from "@/lib/planner";
+import {
+  type PlannerBudget,
+  type PlannerEntry,
+  type PlannerFolder,
+  samplePlannerBudgets,
+  samplePlannerEntries,
+  samplePlannerFolders,
+} from "@/lib/planner";
 import { type WishlistItem, sampleWishlist } from "@/lib/wishlist";
 import {
   type SavingsContribution,
@@ -161,6 +168,8 @@ type State = {
   assignments: Assignments;
   pinnedCategoryIds: string[];
   targets: CategoryTargets;
+  plannerFolders: PlannerFolder[];
+  plannerBudgets: PlannerBudget[];
   plannerEntries: PlannerEntry[];
   scheduledTransactions: ScheduledTransaction[];
   reconciliations: Reconciliation[];
@@ -182,6 +191,8 @@ type Action =
       assignments: Assignments;
       pinnedCategoryIds: string[];
       targets: CategoryTargets;
+      plannerFolders: PlannerFolder[];
+      plannerBudgets: PlannerBudget[];
       plannerEntries: PlannerEntry[];
       scheduledTransactions: ScheduledTransaction[];
       reconciliations: Reconciliation[];
@@ -299,6 +310,25 @@ type Action =
   | { type: "delete_scheduled"; id: string }
   | { type: "post_due_scheduled"; today: string }
   | { type: "auto_fund_recurring_targets"; monthKey: string }
+  | { type: "add_planner_folder"; folder: PlannerFolder }
+  | { type: "rename_planner_folder"; folderId: string; name: string }
+  | { type: "delete_planner_folder"; folderId: string }
+  | { type: "add_planner_budget"; budget: PlannerBudget }
+  | { type: "rename_planner_budget"; budgetId: string; name: string }
+  | { type: "delete_planner_budget"; budgetId: string }
+  | {
+      type: "duplicate_planner_budget";
+      budgetId: string;
+      newBudget: PlannerBudget;
+      idMap: Record<string, string>;
+    }
+  | { type: "set_planner_entry_paid"; id: string; paid: boolean }
+  | {
+      type: "reorder_planner_entry";
+      sourceId: string;
+      targetId: string;
+      position: "before" | "after";
+    }
   | { type: "set_settings"; settings: AppSettings }
   | { type: "restore"; payload: Partial<State> };
 
@@ -309,6 +339,8 @@ const initialState: State = {
   assignments: sampleAssignments,
   pinnedCategoryIds: [],
   targets: {},
+  plannerFolders: samplePlannerFolders,
+  plannerBudgets: samplePlannerBudgets,
   plannerEntries: samplePlannerEntries,
   scheduledTransactions: samplePlannerScheduled,
   reconciliations: [],
@@ -321,6 +353,86 @@ const initialState: State = {
   hydrated: false,
 };
 
+// ─── Planner v1 → v2 migration ──────────────────────────────────────────
+//
+// Earlier payloads only carried plannerEntries. v2 introduces folders and
+// budgets, with each entry rooted at a specific budgetId. When a payload
+// arrives without folders/budgets we synthesize a single default folder
+// + budget so existing entries have a home, instead of disappearing.
+//
+// All three helpers are no-ops for already-migrated v2 payloads — they
+// only kick in when the new arrays are missing, so re-running them is
+// safe.
+
+function migratePlannerFolders(
+  legacyEntries: unknown,
+  fallback: PlannerFolder[],
+): PlannerFolder[] {
+  if (!Array.isArray(legacyEntries) || legacyEntries.length === 0) {
+    return fallback.length > 0 ? fallback : samplePlannerFolders;
+  }
+  return [
+    {
+      id: "default-folder",
+      name: "My Plans",
+      order: 0,
+    },
+  ];
+}
+
+function migratePlannerBudgets(
+  legacyEntries: unknown,
+  fallback: PlannerBudget[],
+): PlannerBudget[] {
+  if (!Array.isArray(legacyEntries) || legacyEntries.length === 0) {
+    return fallback.length > 0 ? fallback : samplePlannerBudgets;
+  }
+  return [
+    {
+      id: "default-budget",
+      folderId: "default-folder",
+      name: "Untitled",
+      order: 0,
+    },
+  ];
+}
+
+// Reassign legacy entries (which had no budgetId) to the default budget,
+// and fill in `paid: false` so the cleared-toggle UI has something to
+// read. If newly arrived entries already carry a budgetId we leave them
+// alone — that's the v2 happy path.
+function migratePlannerEntries(
+  rawEntries: unknown,
+  budgetsHint: unknown,
+): PlannerEntry[] {
+  if (!Array.isArray(rawEntries)) return [];
+  const knownBudgetIds = new Set<string>();
+  if (Array.isArray(budgetsHint)) {
+    for (const b of budgetsHint) {
+      const id = (b as { id?: unknown }).id;
+      if (typeof id === "string") knownBudgetIds.add(id);
+    }
+  }
+  return rawEntries.map((raw, i) => {
+    const e = raw as Partial<PlannerEntry>;
+    const budgetId =
+      typeof e.budgetId === "string" && e.budgetId !== ""
+        ? knownBudgetIds.size === 0 || knownBudgetIds.has(e.budgetId)
+          ? e.budgetId
+          : "default-budget"
+        : "default-budget";
+    return {
+      id: typeof e.id === "string" ? e.id : `legacy-${i}`,
+      budgetId,
+      label: typeof e.label === "string" ? e.label : "",
+      amount: typeof e.amount === "number" ? e.amount : 0,
+      date: typeof e.date === "string" ? e.date : "",
+      paid: typeof e.paid === "boolean" ? e.paid : false,
+      order: typeof e.order === "number" ? e.order : i,
+    };
+  });
+}
+
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "hydrate":
@@ -331,6 +443,8 @@ function reducer(state: State, action: Action): State {
         assignments: action.assignments,
         pinnedCategoryIds: action.pinnedCategoryIds,
         targets: action.targets,
+        plannerFolders: action.plannerFolders,
+        plannerBudgets: action.plannerBudgets,
         plannerEntries: action.plannerEntries,
         scheduledTransactions: action.scheduledTransactions,
         reconciliations: action.reconciliations,
@@ -1078,6 +1192,113 @@ function reducer(state: State, action: Action): State {
         ...state,
         plannerEntries: state.plannerEntries.filter((e) => e.id !== action.id),
       };
+    case "add_planner_folder":
+      return {
+        ...state,
+        plannerFolders: [...state.plannerFolders, action.folder],
+      };
+    case "rename_planner_folder":
+      return {
+        ...state,
+        plannerFolders: state.plannerFolders.map((f) =>
+          f.id === action.folderId ? { ...f, name: action.name } : f,
+        ),
+      };
+    case "delete_planner_folder": {
+      const remainingBudgets = state.plannerBudgets.filter(
+        (b) => b.folderId !== action.folderId,
+      );
+      const remainingBudgetIds = new Set(remainingBudgets.map((b) => b.id));
+      return {
+        ...state,
+        plannerFolders: state.plannerFolders.filter(
+          (f) => f.id !== action.folderId,
+        ),
+        plannerBudgets: remainingBudgets,
+        plannerEntries: state.plannerEntries.filter((e) =>
+          remainingBudgetIds.has(e.budgetId),
+        ),
+      };
+    }
+    case "add_planner_budget":
+      return {
+        ...state,
+        plannerBudgets: [...state.plannerBudgets, action.budget],
+      };
+    case "rename_planner_budget":
+      return {
+        ...state,
+        plannerBudgets: state.plannerBudgets.map((b) =>
+          b.id === action.budgetId ? { ...b, name: action.name } : b,
+        ),
+      };
+    case "delete_planner_budget":
+      return {
+        ...state,
+        plannerBudgets: state.plannerBudgets.filter(
+          (b) => b.id !== action.budgetId,
+        ),
+        plannerEntries: state.plannerEntries.filter(
+          (e) => e.budgetId !== action.budgetId,
+        ),
+      };
+    case "duplicate_planner_budget": {
+      const sourceEntries = state.plannerEntries.filter(
+        (e) => e.budgetId === action.budgetId,
+      );
+      const cloned: PlannerEntry[] = sourceEntries.map((e) => ({
+        ...e,
+        id: action.idMap[e.id] ?? e.id,
+        budgetId: action.newBudget.id,
+      }));
+      return {
+        ...state,
+        plannerBudgets: [...state.plannerBudgets, action.newBudget],
+        plannerEntries: [...state.plannerEntries, ...cloned],
+      };
+    }
+    case "set_planner_entry_paid":
+      return {
+        ...state,
+        plannerEntries: state.plannerEntries.map((e) =>
+          e.id === action.id ? { ...e, paid: action.paid } : e,
+        ),
+      };
+    case "reorder_planner_entry": {
+      const source = state.plannerEntries.find((e) => e.id === action.sourceId);
+      const target = state.plannerEntries.find((e) => e.id === action.targetId);
+      if (!source || !target || source.budgetId !== target.budgetId) {
+        return state;
+      }
+      const budgetEntries = state.plannerEntries
+        .filter((e) => e.budgetId === source.budgetId)
+        .slice()
+        .sort((a, b) => {
+          const ao = a.order ?? Number.MAX_SAFE_INTEGER;
+          const bo = b.order ?? Number.MAX_SAFE_INTEGER;
+          if (ao !== bo) return ao - bo;
+          if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+          return a.id < b.id ? -1 : 1;
+        });
+      const without = budgetEntries.filter((e) => e.id !== action.sourceId);
+      const targetIdx = without.findIndex((e) => e.id === action.targetId);
+      const insertAt = targetIdx + (action.position === "after" ? 1 : 0);
+      const reordered = [
+        ...without.slice(0, insertAt),
+        source,
+        ...without.slice(insertAt),
+      ];
+      const reorderedById = new Map<string, number>();
+      reordered.forEach((e, i) => reorderedById.set(e.id, i));
+      return {
+        ...state,
+        plannerEntries: state.plannerEntries.map((e) => {
+          if (e.budgetId !== source.budgetId) return e;
+          const i = reorderedById.get(e.id);
+          return i === undefined ? e : { ...e, order: i };
+        }),
+      };
+    }
     case "add_scheduled":
       return {
         ...state,
@@ -1128,8 +1349,19 @@ function reducer(state: State, action: Action): State {
           !Array.isArray(action.payload.targets)
             ? action.payload.targets
             : state.targets,
+        plannerFolders: Array.isArray(action.payload.plannerFolders)
+          ? action.payload.plannerFolders
+          : migratePlannerFolders(action.payload.plannerEntries, state.plannerFolders),
+        plannerBudgets: Array.isArray(action.payload.plannerBudgets)
+          ? action.payload.plannerBudgets
+          : migratePlannerBudgets(action.payload.plannerEntries, state.plannerBudgets),
         plannerEntries: Array.isArray(action.payload.plannerEntries)
-          ? action.payload.plannerEntries
+          ? migratePlannerEntries(
+              action.payload.plannerEntries,
+              Array.isArray(action.payload.plannerBudgets)
+                ? action.payload.plannerBudgets
+                : undefined,
+            )
           : state.plannerEntries,
         scheduledTransactions: Array.isArray(action.payload.scheduledTransactions)
           ? action.payload.scheduledTransactions
@@ -1252,6 +1484,8 @@ type Ctx = {
   assignments: Assignments;
   pinnedCategoryIds: string[];
   targets: CategoryTargets;
+  plannerFolders: PlannerFolder[];
+  plannerBudgets: PlannerBudget[];
   plannerEntries: PlannerEntry[];
   scheduledTransactions: ScheduledTransaction[];
   addTransaction: (tx: Omit<Transaction, "id">) => void;
@@ -1347,9 +1581,22 @@ type Ctx = {
     accountId: string,
     terms: { apr: number | null; minimumPayment: number | null },
   ) => void;
-  addPlannerEntry: (entry: Omit<PlannerEntry, "id">) => void;
+  addPlannerEntry: (entry: Omit<PlannerEntry, "id" | "order">) => void;
   updatePlannerEntry: (entry: PlannerEntry) => void;
   deletePlannerEntry: (id: string) => void;
+  addPlannerFolder: (name: string) => void;
+  renamePlannerFolder: (folderId: string, name: string) => void;
+  deletePlannerFolder: (folderId: string) => void;
+  addPlannerBudget: (folderId: string, name: string) => void;
+  renamePlannerBudget: (budgetId: string, name: string) => void;
+  deletePlannerBudget: (budgetId: string) => void;
+  duplicatePlannerBudget: (budgetId: string) => void;
+  setPlannerEntryPaid: (id: string, paid: boolean) => void;
+  reorderPlannerEntry: (
+    sourceId: string,
+    targetId: string,
+    position: "before" | "after",
+  ) => void;
   addScheduled: (s: ScheduledInput) => void;
   updateScheduled: (s: ScheduledTransaction) => void;
   deleteScheduled: (id: string) => void;
@@ -1543,8 +1790,19 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
               !Array.isArray(parsed.targets)
                 ? migrateTargets(parsed.targets as Record<string, unknown>)
                 : {},
+            plannerFolders: Array.isArray(parsed.plannerFolders)
+              ? parsed.plannerFolders
+              : migratePlannerFolders(parsed.plannerEntries, samplePlannerFolders),
+            plannerBudgets: Array.isArray(parsed.plannerBudgets)
+              ? parsed.plannerBudgets
+              : migratePlannerBudgets(parsed.plannerEntries, samplePlannerBudgets),
             plannerEntries: Array.isArray(parsed.plannerEntries)
-              ? parsed.plannerEntries
+              ? migratePlannerEntries(
+                  parsed.plannerEntries,
+                  Array.isArray(parsed.plannerBudgets)
+                    ? parsed.plannerBudgets
+                    : undefined,
+                )
               : [],
             scheduledTransactions: Array.isArray(parsed.scheduledTransactions)
               ? parsed.scheduledTransactions
@@ -1592,6 +1850,8 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       assignments: sampleAssignments,
       pinnedCategoryIds: [],
       targets: {},
+      plannerFolders: samplePlannerFolders,
+      plannerBudgets: samplePlannerBudgets,
       plannerEntries: samplePlannerEntries,
       scheduledTransactions: samplePlannerScheduled,
       reconciliations: [],
@@ -1805,6 +2065,8 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
           assignments: state.assignments,
           pinnedCategoryIds: state.pinnedCategoryIds,
           targets: state.targets,
+          plannerFolders: state.plannerFolders,
+          plannerBudgets: state.plannerBudgets,
           plannerEntries: state.plannerEntries,
           scheduledTransactions: state.scheduledTransactions,
           reconciliations: state.reconciliations,
@@ -2125,12 +2387,25 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const addPlannerEntry = useCallback((entry: Omit<PlannerEntry, "id">) => {
-    dispatch({
-      type: "add_planner_entry",
-      entry: { id: makeId(), ...entry },
-    });
-  }, []);
+  const addPlannerEntry = useCallback(
+    (entry: Omit<PlannerEntry, "id" | "order">) => {
+      // New entries land at the end of their budget by default. We read
+      // stateRef so the value stays current even though the callback
+      // identity is stable.
+      const siblings = stateRef.plannerEntries.filter(
+        (e) => e.budgetId === entry.budgetId,
+      );
+      const maxOrder = siblings.reduce(
+        (m, e) => Math.max(m, e.order ?? -1),
+        -1,
+      );
+      dispatch({
+        type: "add_planner_entry",
+        entry: { id: makeId(), order: maxOrder + 1, ...entry },
+      });
+    },
+    [],
+  );
 
   const updatePlannerEntry = useCallback((entry: PlannerEntry) => {
     dispatch({ type: "update_planner_entry", entry });
@@ -2139,6 +2414,92 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
   const deletePlannerEntry = useCallback((id: string) => {
     dispatch({ type: "delete_planner_entry", id });
   }, []);
+
+  const addPlannerFolder = useCallback((name: string) => {
+    dispatch({
+      type: "add_planner_folder",
+      folder: { id: makeId(), name, order: Date.now() },
+    });
+  }, []);
+
+  const renamePlannerFolder = useCallback(
+    (folderId: string, name: string) => {
+      dispatch({ type: "rename_planner_folder", folderId, name });
+    },
+    [],
+  );
+
+  const deletePlannerFolder = useCallback((folderId: string) => {
+    dispatch({ type: "delete_planner_folder", folderId });
+  }, []);
+
+  const addPlannerBudget = useCallback(
+    (folderId: string, name: string) => {
+      dispatch({
+        type: "add_planner_budget",
+        budget: { id: makeId(), folderId, name, order: Date.now() },
+      });
+    },
+    [],
+  );
+
+  const renamePlannerBudget = useCallback(
+    (budgetId: string, name: string) => {
+      dispatch({ type: "rename_planner_budget", budgetId, name });
+    },
+    [],
+  );
+
+  const deletePlannerBudget = useCallback((budgetId: string) => {
+    dispatch({ type: "delete_planner_budget", budgetId });
+  }, []);
+
+  // Duplication does the id-minting outside the reducer to keep the
+  // reducer pure — see the duplicate_planner_budget case for the
+  // shape that consumes idMap.
+  const duplicatePlannerBudget = useCallback(
+    (budgetId: string) => {
+      const sourceBudget = stateRef.plannerBudgets.find(
+        (b) => b.id === budgetId,
+      );
+      if (!sourceBudget) return;
+      const sourceEntries = stateRef.plannerEntries.filter(
+        (e) => e.budgetId === budgetId,
+      );
+      const idMap: Record<string, string> = {};
+      for (const e of sourceEntries) idMap[e.id] = makeId();
+      dispatch({
+        type: "duplicate_planner_budget",
+        budgetId,
+        newBudget: {
+          id: makeId(),
+          folderId: sourceBudget.folderId,
+          name: `${sourceBudget.name} (copy)`,
+          order: Date.now(),
+        },
+        idMap,
+      });
+    },
+    // stateRef is stable — captured at the closure site below — so we
+    // keep the dep list empty.
+    [],
+  );
+
+  const setPlannerEntryPaid = useCallback((id: string, paid: boolean) => {
+    dispatch({ type: "set_planner_entry_paid", id, paid });
+  }, []);
+
+  const reorderPlannerEntry = useCallback(
+    (sourceId: string, targetId: string, position: "before" | "after") => {
+      dispatch({
+        type: "reorder_planner_entry",
+        sourceId,
+        targetId,
+        position,
+      });
+    },
+    [],
+  );
 
   const addScheduled = useCallback(
     (scheduled: ScheduledInput) => {
@@ -2181,6 +2542,8 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
           assignments: state.assignments,
           pinnedCategoryIds: state.pinnedCategoryIds,
           targets: state.targets,
+          plannerFolders: state.plannerFolders,
+          plannerBudgets: state.plannerBudgets,
           plannerEntries: state.plannerEntries,
           scheduledTransactions: state.scheduledTransactions,
           settings: state.settings,
@@ -2218,6 +2581,8 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
             assignments: sampleAssignments,
             pinnedCategoryIds: [],
             targets: {},
+            plannerFolders: samplePlannerFolders,
+            plannerBudgets: samplePlannerBudgets,
             plannerEntries: samplePlannerEntries,
             scheduledTransactions: samplePlannerScheduled,
             settings: { currency: state.settings.currency },
@@ -2361,6 +2726,8 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
             assignments: {},
             pinnedCategoryIds: [],
             targets: {},
+            plannerFolders: [],
+            plannerBudgets: [],
             plannerEntries: [],
             scheduledTransactions: [],
             settings: { currency: state.settings.currency },
@@ -2407,6 +2774,8 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
             assignments: state.assignments,
             pinnedCategoryIds: state.pinnedCategoryIds,
             targets: state.targets,
+            plannerFolders: state.plannerFolders,
+            plannerBudgets: state.plannerBudgets,
             plannerEntries: state.plannerEntries,
             scheduledTransactions: state.scheduledTransactions,
             reconciliations: state.reconciliations,
@@ -2481,6 +2850,8 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
           assignments: {},
           pinnedCategoryIds: state.pinnedCategoryIds,
           targets: state.targets,
+          plannerFolders: [],
+          plannerBudgets: [],
           plannerEntries: [],
           scheduledTransactions: [],
           reconciliations: [],
@@ -2544,6 +2915,8 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
           assignments: state.assignments,
           pinnedCategoryIds: state.pinnedCategoryIds,
           targets: state.targets,
+          plannerFolders: state.plannerFolders,
+          plannerBudgets: state.plannerBudgets,
           plannerEntries: state.plannerEntries,
           scheduledTransactions: state.scheduledTransactions,
           settings: state.settings,
@@ -2583,6 +2956,8 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       assignments: stateRef.assignments,
       pinnedCategoryIds: stateRef.pinnedCategoryIds,
       targets: stateRef.targets,
+      plannerFolders: stateRef.plannerFolders,
+      plannerBudgets: stateRef.plannerBudgets,
       plannerEntries: stateRef.plannerEntries,
       scheduledTransactions: stateRef.scheduledTransactions,
       settings: stateRef.settings,
@@ -2597,6 +2972,8 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       assignments: state.assignments,
       pinnedCategoryIds: state.pinnedCategoryIds,
       targets: state.targets,
+      plannerFolders: state.plannerFolders,
+      plannerBudgets: state.plannerBudgets,
       plannerEntries: state.plannerEntries,
       scheduledTransactions: state.scheduledTransactions,
       addTransaction,
@@ -2659,6 +3036,15 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       addPlannerEntry,
       updatePlannerEntry,
       deletePlannerEntry,
+      addPlannerFolder,
+      renamePlannerFolder,
+      deletePlannerFolder,
+      addPlannerBudget,
+      renamePlannerBudget,
+      deletePlannerBudget,
+      duplicatePlannerBudget,
+      setPlannerEntryPaid,
+      reorderPlannerEntry,
       addScheduled,
       updateScheduled,
       deleteScheduled,
@@ -2758,6 +3144,15 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       addPlannerEntry,
       updatePlannerEntry,
       deletePlannerEntry,
+      addPlannerFolder,
+      renamePlannerFolder,
+      deletePlannerFolder,
+      addPlannerBudget,
+      renamePlannerBudget,
+      deletePlannerBudget,
+      duplicatePlannerBudget,
+      setPlannerEntryPaid,
+      reorderPlannerEntry,
       addScheduled,
       updateScheduled,
       deleteScheduled,
