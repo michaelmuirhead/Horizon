@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { use, useMemo } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import { GripVertical, Minus, Plus } from "lucide-react";
 import SubpageHeader from "@/components/layout/SubpageHeader";
 import PlannerEntryRow from "@/components/planner/PlannerEntryRow";
@@ -49,6 +49,24 @@ export default function PlannerBudgetPage({
   const { drag, rowStyle, gripProps } = usePlannerReorderDrag({
     onReorder: reorderPlannerEntry,
   });
+
+  // Measure the fixed bottom strip so the tail spacer below the list
+  // matches its actual height. The strip's content varies with totals
+  // (e.g. multi-line balances on smaller phones) and the tab layout's
+  // pb-28 only clears the bottom nav, not the strip stacked on top of
+  // it — a static pixel guess clipped the last entry on iPhone PWAs.
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  const [stripHeight, setStripHeight] = useState<number>(260);
+  useEffect(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    const measure = () => setStripHeight(el.offsetHeight);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   if (!folder || !budget) {
     return (
@@ -131,18 +149,16 @@ export default function PlannerBudgetPage({
         </ul>
       )}
 
-      {/* Tail spacer that clears the fixed Income/Expenses/Balance +
-          Add Income/Add Expense strip stacked above the bottom nav.
-          The strip's own pb already covers the nav inset, so we only
-          need to size for the strip's content + a small buffer plus
-          the iPhone home-indicator safe-area. */}
-      <div
-        aria-hidden
-        className="h-[calc(env(safe-area-inset-bottom)+180px)]"
-      />
+      {/* Tail spacer sized off the measured strip height + a small
+          buffer so the last row always scrolls clear, regardless of
+          how the totals wrap or how big the home-indicator inset is. */}
+      <div aria-hidden style={{ height: stripHeight + 16 }} />
 
       <div className="fixed inset-x-0 bottom-0 z-30 md:pl-20">
-        <div className="mx-auto max-w-md md:max-w-3xl lg:max-w-5xl bg-page/95 backdrop-blur border-t border-fg/10 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+88px)] md:pb-6 space-y-3">
+        <div
+          ref={stripRef}
+          className="mx-auto max-w-md md:max-w-3xl lg:max-w-5xl bg-page/95 backdrop-blur border-t border-fg/10 px-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+88px)] md:pb-6 space-y-3"
+        >
           <div className="flex items-end justify-between gap-3 text-xs">
             <div className="flex flex-col gap-0.5">
               <span className="flex items-baseline gap-1.5">
