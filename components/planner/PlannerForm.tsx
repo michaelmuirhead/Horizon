@@ -7,7 +7,10 @@ import SegmentedField from "@/components/forms/SegmentedField";
 import SaveButton from "@/components/forms/SaveButton";
 import type { PlannerEntry } from "@/lib/planner";
 
-export type PlannerFormValues = Omit<PlannerEntry, "id">;
+// Values returned by the form. budgetId is supplied by the page that
+// hosts the form (e.g. /planner/{folderId}/{budgetId}/new) so the store
+// knows where to slot the entry.
+export type PlannerFormValues = Omit<PlannerEntry, "id" | "order">;
 
 type Direction = "expense" | "income";
 
@@ -18,6 +21,13 @@ function todayIso(): string {
 
 type Props = {
   initial?: PlannerEntry;
+  // Required for new entries — which budget to add into. When `initial`
+  // is provided, the form falls back to its budgetId so a refactor that
+  // forgets to thread budgetId through still works for edits.
+  budgetId?: string;
+  // Initial direction for new entries when no `initial` is provided.
+  // Used by the income/expense quick-add buttons in the budget view.
+  defaultDirection?: Direction;
   saveLabel: string;
   onSave: (values: PlannerFormValues) => void;
   onDelete?: () => void;
@@ -27,13 +37,18 @@ type Props = {
 
 export default function PlannerForm({
   initial,
+  budgetId,
+  defaultDirection,
   saveLabel,
   onSave,
   onDelete,
   defaultDate,
 }: Props) {
-  const initialDirection: Direction =
-    initial && initial.amount > 0 ? "income" : "expense";
+  const initialDirection: Direction = initial
+    ? initial.amount >= 0
+      ? "income"
+      : "expense"
+    : (defaultDirection ?? "expense");
 
   const [direction, setDirection] = useState<Direction>(initialDirection);
   const [label, setLabel] = useState<string>(initial?.label ?? "");
@@ -43,6 +58,7 @@ export default function PlannerForm({
   const [date, setDate] = useState<string>(
     initial?.date ?? defaultDate ?? todayIso(),
   );
+  const [paid, setPaid] = useState<boolean>(initial?.paid ?? false);
 
   const valid = label.trim() !== "" && parseFloat(amount) > 0;
 
@@ -51,7 +67,14 @@ export default function PlannerForm({
     if (!valid) return;
     const magnitude = parseFloat(amount);
     const signed = direction === "income" ? magnitude : -magnitude;
-    onSave({ label: label.trim(), amount: signed, date });
+    const targetBudgetId = initial?.budgetId ?? budgetId ?? "";
+    onSave({
+      budgetId: targetBudgetId,
+      label: label.trim(),
+      amount: signed,
+      date,
+      paid,
+    });
   }
 
   return (
@@ -106,6 +129,21 @@ export default function PlannerForm({
             onChange={(e) => setDate(e.target.value)}
             required
           />
+        </FormRow>
+
+        <FormRow label="Paid" htmlFor="planner-paid">
+          <label className="flex items-center justify-end gap-2 text-sm">
+            <input
+              id="planner-paid"
+              type="checkbox"
+              checked={paid}
+              onChange={(e) => setPaid(e.target.checked)}
+              className="h-5 w-5 rounded border-fg/20 bg-card accent-accent"
+            />
+            <span className="text-fg/65">
+              {paid ? "Cleared" : "Not yet"}
+            </span>
+          </label>
         </FormRow>
       </FormGroup>
 
