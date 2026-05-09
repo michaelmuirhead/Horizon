@@ -7,7 +7,6 @@ import {
   ArrowLeftRight,
   CalendarClock,
   CalendarDays,
-  CalendarRange,
   CheckCircle2,
   Database,
   ListFilter,
@@ -295,13 +294,6 @@ function Spending() {
               className="grid h-10 w-10 place-items-center"
             >
               <CalendarClock size={18} strokeWidth={2.2} />
-            </Link>
-            <Link
-              href="/spending/calendar"
-              aria-label="Calendar"
-              className="grid h-10 w-10 place-items-center"
-            >
-              <CalendarRange size={18} strokeWidth={2.2} />
             </Link>
             <Link
               href="/spending/payees"

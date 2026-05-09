@@ -1,225 +1,160 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, type FormEvent } from "react";
-import { ChevronRight, Folder, Plus, Pencil, Trash2, Copy } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import PageTitle from "@/components/layout/PageTitle";
-import RowMenu from "@/components/planner/RowMenu";
+import PlannerEntryRow from "@/components/planner/PlannerEntryRow";
+import AnimatedCurrency from "@/components/shared/AnimatedCurrency";
 import { useHorizonStore } from "@/components/store/HorizonStore";
-import { folderBalance } from "@/lib/planner";
-import { formatCurrency } from "@/lib/format";
 
-export default function PlannerFoldersPage() {
-  const {
-    plannerFolders,
-    plannerBudgets,
-    plannerEntries,
-    addPlannerFolder,
-    renamePlannerFolder,
-    deletePlannerFolder,
-    duplicatePlannerFolder,
-  } = useHorizonStore();
+const monthFmt = new Intl.DateTimeFormat("en-US", {
+  month: "long",
+  year: "numeric",
+});
 
-  const [creating, setCreating] = useState(false);
-  const [draftName, setDraftName] = useState("");
-  const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [renameDraft, setRenameDraft] = useState("");
+function monthKeyOf(year: number, monthIndex: number): string {
+  return `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+}
 
-  const totalBalance = useMemo(
-    () =>
-      plannerFolders.reduce(
-        (sum, f) => sum + folderBalance(f.id, plannerBudgets, plannerEntries),
-        0,
-      ),
-    [plannerFolders, plannerBudgets, plannerEntries],
+function monthKeyFromIso(iso: string): string {
+  // Pull YYYY-MM from a YYYY-MM-DD string without parsing into a Date so
+  // we don't lose the day to TZ shifts.
+  return iso.slice(0, 7);
+}
+
+function shiftMonthKey(key: string, delta: number): string {
+  const [y, m] = key.split("-").map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return monthKeyOf(d.getFullYear(), d.getMonth());
+}
+
+function labelFromMonthKey(key: string): string {
+  const [y, m] = key.split("-").map(Number);
+  return monthFmt.format(new Date(y, m - 1, 1));
+}
+
+export default function PlannerPage() {
+  const { plannerEntries } = useHorizonStore();
+  const now = new Date();
+  const [monthKey, setMonthKey] = useState<string>(() =>
+    monthKeyOf(now.getFullYear(), now.getMonth()),
   );
 
-  function submitCreate(e: FormEvent) {
-    e.preventDefault();
-    const name = draftName.trim();
-    if (name === "") return;
-    addPlannerFolder(name);
-    setDraftName("");
-    setCreating(false);
-  }
+  // Slice the flat entry list down to the picked month. Sort chronologically
+  // so the running balance accrues in date order; we reverse for display so
+  // newest-on-top mirrors Fudget's layout while the per-row balance still
+  // reads "what the budget was at after this entry posted".
+  const monthRows = useMemo(() => {
+    const inMonth = plannerEntries.filter(
+      (e) => monthKeyFromIso(e.date) === monthKey,
+    );
+    const ascending = inMonth.slice().sort((a, b) => {
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+      // Stable secondary by id so same-day entries hold a consistent order.
+      return a.id < b.id ? -1 : 1;
+    });
+    let running = 0;
+    const withBalances = ascending.map((entry) => {
+      running += entry.amount;
+      return { entry, running };
+    });
+    return withBalances.reverse();
+  }, [plannerEntries, monthKey]);
 
-  function submitRename(e: FormEvent) {
-    e.preventDefault();
-    if (!renamingId) return;
-    const name = renameDraft.trim();
-    if (name !== "") renamePlannerFolder(renamingId, name);
-    setRenamingId(null);
-  }
+  const monthTotal = monthRows.reduce((sum, r) => sum + r.entry.amount, 0);
+  const tone =
+    monthTotal > 0
+      ? "text-emerald-400"
+      : monthTotal < 0
+        ? "text-rose-400"
+        : "text-fg";
+
+  const newHref = `/planner/new?month=${monthKey}`;
 
   return (
     <>
       <div className="px-4 pt-[max(env(safe-area-inset-top),12px)]">
-        <div className="mt-2">
+        <div className="flex justify-end">
+          <Link
+            href={newHref}
+            aria-label="Add Planner Entry"
+            className="grid h-10 w-10 place-items-center rounded-full bg-card-elevated"
+          >
+            <Plus size={20} strokeWidth={2.5} />
+          </Link>
+        </div>
+
+        <div className="mt-4">
           <PageTitle>Planner</PageTitle>
         </div>
-        <p className="mt-1 text-sm text-fg/55">Folders</p>
+
+        <div className="mt-4 flex items-center justify-center gap-1">
+          <button
+            type="button"
+            onClick={() => setMonthKey((k) => shiftMonthKey(k, -1))}
+            aria-label="Previous month"
+            className="grid h-9 w-9 place-items-center rounded-full hover:bg-card-elevated"
+          >
+            <ChevronLeft size={18} strokeWidth={2.5} />
+          </button>
+          <span className="min-w-[10rem] text-center text-lg font-bold">
+            {labelFromMonthKey(monthKey)}
+          </span>
+          <button
+            type="button"
+            onClick={() => setMonthKey((k) => shiftMonthKey(k, 1))}
+            aria-label="Next month"
+            className="grid h-9 w-9 place-items-center rounded-full hover:bg-card-elevated"
+          >
+            <ChevronRight size={18} strokeWidth={2.5} />
+          </button>
+        </div>
+
+        <div className="mt-4 rounded-3xl bg-card p-5">
+          <p className="text-xs font-medium uppercase tracking-wide text-fg/60">
+            {labelFromMonthKey(monthKey)} balance
+          </p>
+          <p className="mt-1 text-4xl font-extrabold tabular-nums">
+            <AnimatedCurrency
+              value={monthTotal}
+              toneClassName={tone}
+            />
+          </p>
+          <p className="mt-1 text-xs text-fg/55">
+            {monthRows.length === 0
+              ? "Nothing logged for this month yet."
+              : `${monthRows.length} ${monthRows.length === 1 ? "entry" : "entries"} this month`}
+          </p>
+        </div>
       </div>
 
-      {plannerFolders.length === 0 ? (
-        <div className="px-4 py-12 text-center text-sm text-fg/55">
-          No folders yet. Tap{" "}
-          <span className="font-bold text-fg/85">+ Add Folder</span> to start.
+      {monthRows.length === 0 ? (
+        <div className="px-4 py-12 text-center text-fg/55">
+          <p>
+            Add an entry to start budgeting{" "}
+            <span className="font-semibold text-fg/80">
+              {labelFromMonthKey(monthKey)}
+            </span>
+            .
+          </p>
+          <Link
+            href={newHref}
+            className="mt-3 inline-flex items-center gap-1.5 text-sm font-bold text-accent"
+          >
+            <Plus size={14} strokeWidth={2.5} />
+            New entry
+          </Link>
         </div>
       ) : (
         <ul className="mt-4 divide-y divide-fg/5 border-y border-fg/5">
-          {plannerFolders.map((folder) => {
-            const balance = folderBalance(
-              folder.id,
-              plannerBudgets,
-              plannerEntries,
-            );
-            const tone =
-              balance > 0
-                ? "text-emerald-400"
-                : balance < 0
-                  ? "text-rose-400"
-                  : "text-fg/60";
-            const isRenaming = renamingId === folder.id;
-            return (
-              <li
-                key={folder.id}
-                className="flex items-center gap-2 bg-card pl-4 pr-2"
-              >
-                {isRenaming ? (
-                  <form
-                    onSubmit={submitRename}
-                    className="flex flex-1 items-center gap-2 py-3"
-                  >
-                    <Folder size={18} className="text-accent shrink-0" />
-                    <input
-                      type="text"
-                      autoFocus
-                      value={renameDraft}
-                      onChange={(e) => setRenameDraft(e.target.value)}
-                      onBlur={submitRename}
-                      onKeyDown={(e) => {
-                        if (e.key === "Escape") setRenamingId(null);
-                      }}
-                      className="flex-1 bg-transparent text-base font-bold outline-none"
-                    />
-                  </form>
-                ) : (
-                  <Link
-                    href={`/planner/${folder.id}`}
-                    className="flex flex-1 items-center gap-3 py-3.5 min-w-0"
-                  >
-                    <Folder size={18} className="text-accent shrink-0" />
-                    <span className="flex-1 min-w-0 truncate text-base font-bold">
-                      {folder.name}
-                    </span>
-                    <span
-                      className={`text-base font-bold tabular-nums shrink-0 ${tone}`}
-                    >
-                      {balance >= 0 ? "+" : "−"}
-                      {formatCurrency(Math.abs(balance))}
-                    </span>
-                    <ChevronRight size={16} className="text-fg/40 shrink-0" />
-                  </Link>
-                )}
-                <RowMenu
-                  ariaLabel={`Actions for ${folder.name}`}
-                  items={[
-                    {
-                      label: "Rename",
-                      icon: <Pencil size={14} />,
-                      onClick: () => {
-                        setRenamingId(folder.id);
-                        setRenameDraft(folder.name);
-                      },
-                    },
-                    {
-                      label: "Duplicate",
-                      icon: <Copy size={14} />,
-                      onClick: () => duplicatePlannerFolder(folder.id),
-                    },
-                    {
-                      label: "Delete",
-                      icon: <Trash2 size={14} />,
-                      destructive: true,
-                      onClick: () => {
-                        if (
-                          window.confirm(
-                            `Delete "${folder.name}"? This removes every budget inside and their entries.`,
-                          )
-                        ) {
-                          deletePlannerFolder(folder.id);
-                        }
-                      },
-                    },
-                  ]}
-                />
-              </li>
-            );
-          })}
+          {monthRows.map(({ entry, running }) => (
+            <li key={entry.id}>
+              <PlannerEntryRow entry={entry} runningBalance={running} />
+            </li>
+          ))}
         </ul>
       )}
-
-      <div className="px-4 pt-4 pb-2">
-        {creating ? (
-          <form
-            onSubmit={submitCreate}
-            className="flex items-center gap-2 rounded-2xl bg-card px-3 py-2"
-          >
-            <Folder size={18} className="text-accent" />
-            <input
-              type="text"
-              autoFocus
-              placeholder="Folder name"
-              value={draftName}
-              onChange={(e) => setDraftName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  setDraftName("");
-                  setCreating(false);
-                }
-              }}
-              className="flex-1 bg-transparent text-base font-bold outline-none placeholder:text-fg/40"
-            />
-            <button
-              type="submit"
-              className="rounded-full bg-accent/15 px-3 py-1.5 text-sm font-bold text-accent"
-            >
-              Add
-            </button>
-          </form>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setCreating(true)}
-            className="flex w-full items-center justify-center gap-2 rounded-full border border-accent/40 px-5 py-3.5 text-base font-bold text-accent"
-          >
-            <Plus size={18} strokeWidth={2.5} />
-            Add Folder
-          </button>
-        )}
-      </div>
-
-      {plannerFolders.length > 0 && (
-        <div className="mt-2 px-4 py-3 flex items-baseline justify-between border-t border-fg/5">
-          <span className="text-sm font-semibold text-fg/70">
-            Folder Balance
-          </span>
-          <span
-            className={`text-xl font-extrabold tabular-nums ${
-              totalBalance > 0
-                ? "text-emerald-400"
-                : totalBalance < 0
-                  ? "text-rose-400"
-                  : "text-fg"
-            }`}
-          >
-            {totalBalance >= 0 ? "+" : "−"}
-            {formatCurrency(Math.abs(totalBalance))}
-          </span>
-        </div>
-      )}
-
-      <div aria-hidden className="h-12" />
     </>
   );
 }
