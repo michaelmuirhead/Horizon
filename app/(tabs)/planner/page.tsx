@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
-import { ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronRight, Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import PageTitle from "@/components/layout/PageTitle";
 import RowMenu from "@/components/planner/RowMenu";
 import { useHorizonStore } from "@/components/store/HorizonStore";
@@ -17,6 +17,7 @@ export default function PlannerPage() {
     addPlannerFolder,
     renamePlannerFolder,
     deletePlannerFolder,
+    duplicatePlannerFolder,
   } = useHorizonStore();
 
   const [creating, setCreating] = useState(false);
@@ -131,6 +132,11 @@ export default function PlannerPage() {
                         setRenamingId(folder.id);
                         setRenameDraft(folder.name);
                       },
+                    },
+                    {
+                      label: "Duplicate",
+                      icon: <Copy size={14} />,
+                      onClick: () => duplicatePlannerFolder(folder.id),
                     },
                     {
                       label: "Delete",

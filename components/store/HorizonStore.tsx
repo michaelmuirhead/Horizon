@@ -313,6 +313,17 @@ type Action =
   | { type: "add_planner_folder"; folder: PlannerFolder }
   | { type: "rename_planner_folder"; folderId: string; name: string }
   | { type: "delete_planner_folder"; folderId: string }
+  | {
+      type: "duplicate_planner_folder";
+      folderId: string;
+      newFolder: PlannerFolder;
+      // Maps old budget ids → freshly minted clone ids. The reducer
+      // splices new budgets in for every key here.
+      budgetIdMap: Record<string, string>;
+      // Maps old entry ids → freshly minted clone ids, scoped to the
+      // entries being copied (children of the cloned budgets).
+      entryIdMap: Record<string, string>;
+    }
   | { type: "add_planner_budget"; budget: PlannerBudget }
   | { type: "rename_planner_budget"; budgetId: string; name: string }
   | { type: "delete_planner_budget"; budgetId: string }
@@ -426,7 +437,8 @@ function migratePlannerEntries(
       budgetId,
       label: typeof e.label === "string" ? e.label : "",
       amount: typeof e.amount === "number" ? e.amount : 0,
-      date: typeof e.date === "string" ? e.date : "",
+      date:
+        typeof e.date === "string" && e.date !== "" ? e.date : undefined,
       paid: typeof e.paid === "boolean" ? e.paid : false,
       order: typeof e.order === "number" ? e.order : i,
     };
@@ -1220,6 +1232,33 @@ function reducer(state: State, action: Action): State {
         ),
       };
     }
+    case "duplicate_planner_folder": {
+      // Clone every budget under `folderId` onto the new folder, then
+      // clone every entry under those budgets and remap to the new
+      // budget ids. The id maps are minted by the callback so the
+      // reducer stays pure (mirroring duplicate_planner_budget).
+      const sourceBudgets = state.plannerBudgets.filter(
+        (b) => b.folderId === action.folderId,
+      );
+      const clonedBudgets: PlannerBudget[] = sourceBudgets.map((b) => ({
+        ...b,
+        id: action.budgetIdMap[b.id] ?? b.id,
+        folderId: action.newFolder.id,
+      }));
+      const clonedEntries: PlannerEntry[] = state.plannerEntries
+        .filter((e) => action.budgetIdMap[e.budgetId])
+        .map((e) => ({
+          ...e,
+          id: action.entryIdMap[e.id] ?? e.id,
+          budgetId: action.budgetIdMap[e.budgetId],
+        }));
+      return {
+        ...state,
+        plannerFolders: [...state.plannerFolders, action.newFolder],
+        plannerBudgets: [...state.plannerBudgets, ...clonedBudgets],
+        plannerEntries: [...state.plannerEntries, ...clonedEntries],
+      };
+    }
     case "add_planner_budget":
       return {
         ...state,
@@ -1277,7 +1316,11 @@ function reducer(state: State, action: Action): State {
           const ao = a.order ?? Number.MAX_SAFE_INTEGER;
           const bo = b.order ?? Number.MAX_SAFE_INTEGER;
           if (ao !== bo) return ao - bo;
-          if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+          // Undated entries sort last among same-order rows so they
+          // don't elbow ahead of dated ones during reorder math.
+          const ad = a.date ?? "9999-99-99";
+          const bd = b.date ?? "9999-99-99";
+          if (ad !== bd) return ad < bd ? -1 : 1;
           return a.id < b.id ? -1 : 1;
         });
       const without = budgetEntries.filter((e) => e.id !== action.sourceId);
@@ -1587,6 +1630,7 @@ type Ctx = {
   addPlannerFolder: (name: string) => void;
   renamePlannerFolder: (folderId: string, name: string) => void;
   deletePlannerFolder: (folderId: string) => void;
+  duplicatePlannerFolder: (folderId: string) => void;
   addPlannerBudget: (folderId: string, name: string) => void;
   renamePlannerBudget: (budgetId: string, name: string) => void;
   deletePlannerBudget: (budgetId: string) => void;
@@ -2433,6 +2477,36 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "delete_planner_folder", folderId });
   }, []);
 
+  // Duplicates the folder and every budget + entry under it. Mints
+  // new ids for each cloned record outside the reducer so the reducer
+  // can stay pure (mirrors duplicatePlannerBudget).
+  const duplicatePlannerFolder = useCallback((folderId: string) => {
+    const sourceFolder = stateRef.plannerFolders.find(
+      (f) => f.id === folderId,
+    );
+    if (!sourceFolder) return;
+    const sourceBudgets = stateRef.plannerBudgets.filter(
+      (b) => b.folderId === folderId,
+    );
+    const budgetIdMap: Record<string, string> = {};
+    for (const b of sourceBudgets) budgetIdMap[b.id] = makeId();
+    const entryIdMap: Record<string, string> = {};
+    for (const e of stateRef.plannerEntries) {
+      if (budgetIdMap[e.budgetId]) entryIdMap[e.id] = makeId();
+    }
+    dispatch({
+      type: "duplicate_planner_folder",
+      folderId,
+      newFolder: {
+        id: makeId(),
+        name: `${sourceFolder.name} (copy)`,
+        order: Date.now(),
+      },
+      budgetIdMap,
+      entryIdMap,
+    });
+  }, []);
+
   const addPlannerBudget = useCallback(
     (folderId: string, name: string) => {
       dispatch({
@@ -3039,6 +3113,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       addPlannerFolder,
       renamePlannerFolder,
       deletePlannerFolder,
+      duplicatePlannerFolder,
       addPlannerBudget,
       renamePlannerBudget,
       deletePlannerBudget,
@@ -3147,6 +3222,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       addPlannerFolder,
       renamePlannerFolder,
       deletePlannerFolder,
+      duplicatePlannerFolder,
       addPlannerBudget,
       renamePlannerBudget,
       deletePlannerBudget,
