@@ -12,7 +12,7 @@
 
 import { getFirebase } from "./firebase";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export type CloudBudgetDoc = {
   payload: unknown;
