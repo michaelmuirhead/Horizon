@@ -31,27 +31,8 @@ function detectDirection(
   return amount > 0 ? "inflow" : "outflow";
 }
 
-// Optional prefill for the "new scheduled" flow. Used when promoting a
-// record from elsewhere (e.g. a Planner entry, a detected subscription)
-// where we know some of the fields but not all. Ignored entirely when
-// `initial` is passed — that path is editing an existing record.
-export type ScheduledFormSeed = {
-  // Signed amount. The form derives direction (inflow / outflow) from
-  // sign and stores its own positive magnitude.
-  amount?: number;
-  // Maps onto the payee field for the prefill — callers using "label"
-  // (planner) and callers using "payee" (subscriptions) both land here.
-  payee?: string;
-  nextDate?: string;
-  // Pre-selected category name. Falls back to the form's first category
-  // option when missing or unknown.
-  category?: string;
-  cadence?: ScheduledCadence;
-};
-
 type Props = {
   initial?: ScheduledTransaction;
-  seed?: ScheduledFormSeed;
   saveLabel: string;
   onSave: (values: ScheduledFormValues) => void;
   onDelete?: () => void;
@@ -59,7 +40,6 @@ type Props = {
 
 export default function ScheduledForm({
   initial,
-  seed,
   saveLabel,
   onSave,
   onDelete,
@@ -80,11 +60,7 @@ export default function ScheduledForm({
   const initialDirection: Direction =
     initial && initial.kind !== "transfer"
       ? detectDirection(initial.amount, initial.isReadyToAssign)
-      : seed && seed.amount !== undefined
-        ? seed.amount > 0
-          ? "inflow"
-          : "outflow"
-        : "outflow";
+      : "outflow";
   const initialAccountId =
     initial && initial.kind !== "transfer"
       ? (accounts.find((a) => a.name === initial.account)?.id ??
@@ -95,19 +71,13 @@ export default function ScheduledForm({
   const [direction, setDirection] = useState<Direction>(initialDirection);
   const [accountId, setAccountId] = useState<string>(initialAccountId);
   const [payee, setPayee] = useState<string>(
-    initial && initial.kind !== "transfer"
-      ? initial.payee
-      : (seed?.payee ?? ""),
+    initial && initial.kind !== "transfer" ? initial.payee : "",
   );
-  const [category, setCategory] = useState<string>(() => {
-    if (initial && initial.kind !== "transfer" && !initial.isReadyToAssign) {
-      return initial.category;
-    }
-    if (seed?.category && categoryNames.includes(seed.category)) {
-      return seed.category;
-    }
-    return categoryNames[0] ?? "";
-  });
+  const [category, setCategory] = useState<string>(
+    initial && initial.kind !== "transfer" && !initial.isReadyToAssign
+      ? initial.category
+      : (categoryNames[0] ?? ""),
+  );
 
   // Transfer-only fields
   const [fromAccountId, setFromAccountId] = useState<string>(
@@ -127,17 +97,13 @@ export default function ScheduledForm({
 
   // Common fields
   const [cadence, setCadence] = useState<ScheduledCadence>(
-    initial?.cadence ?? seed?.cadence ?? "monthly",
+    initial?.cadence ?? "monthly",
   );
   const [nextDate, setNextDate] = useState<string>(
-    initial?.nextDate ?? seed?.nextDate ?? todayIso(),
+    initial?.nextDate ?? todayIso(),
   );
   const [amount, setAmount] = useState<string>(
-    initial
-      ? Math.abs(initial.amount).toString()
-      : seed?.amount !== undefined
-        ? Math.abs(seed.amount).toString()
-        : "",
+    initial ? Math.abs(initial.amount).toString() : "",
   );
   const [memo, setMemo] = useState<string>(initial?.memo ?? "");
 
