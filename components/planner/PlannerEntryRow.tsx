@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
+import { Check } from "lucide-react";
 import type { PlannerEntry } from "@/lib/planner";
 import { formatPlannerDate } from "@/lib/planner";
 import { formatCurrency } from "@/lib/format";
@@ -9,34 +11,79 @@ import SwipeToDelete from "@/components/shared/SwipeToDelete";
 
 type Props = {
   entry: PlannerEntry;
-  // Cumulative budget balance after this entry posted (Fudget-style). When
-  // omitted, only the row's own signed amount is rendered.
+  // Cumulative budget balance after this entry posted (Fudget-style).
   runningBalance?: number;
+  // Click target. Defaults to the legacy /planner/{id} edit route, but
+  // pages inside the folder/budget hierarchy override this with the
+  // full nested path.
+  href?: string;
+  // Toggling clears/uncovers the entry. Optional so the legacy month
+  // view can still render rows without the cleared affordance.
+  onTogglePaid?: () => void;
+  // Optional override for delete. When provided, the row renders plain
+  // (no swipe-to-delete) and the page is expected to wire delete via a
+  // row menu. When omitted, the row falls back to the legacy
+  // SwipeToDelete + store.deletePlannerEntry flow.
+  onDelete?: () => void;
+  // Drag handle node rendered on the leading edge of the row. Pages
+  // building reorder UIs pass the grip button in here.
+  dragHandle?: ReactNode;
 };
 
-export default function PlannerEntryRow({ entry, runningBalance }: Props) {
+export default function PlannerEntryRow({
+  entry,
+  runningBalance,
+  href,
+  onTogglePaid,
+  onDelete,
+  dragHandle,
+}: Props) {
   const { deletePlannerEntry, markUndoable } = useHorizonStore();
   const isIncome = entry.amount > 0;
   const display = isIncome
     ? `+${formatCurrency(entry.amount)}`
     : `−${formatCurrency(Math.abs(entry.amount))}`;
 
-  function handleDelete() {
+  const target = href ?? `/planner/${entry.id}`;
+  const paid = !!entry.paid;
+
+  function handleLegacyDelete() {
     markUndoable(`Entry "${entry.label}" deleted`);
     deletePlannerEntry(entry.id);
   }
 
-  return (
-    <SwipeToDelete
-      onDelete={handleDelete}
-      ariaLabel={`Delete entry ${entry.label}`}
-    >
+  const body = (
+    <div className="flex w-full items-center gap-2 bg-card pr-2">
+      {dragHandle}
+      {onTogglePaid && (
+        <button
+          type="button"
+          aria-pressed={paid}
+          aria-label={paid ? "Mark as not paid" : "Mark as paid"}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onTogglePaid();
+          }}
+          className={`ml-2 grid h-5 w-5 place-items-center rounded-full border ${
+            paid
+              ? "border-emerald-400 bg-emerald-400/15 text-emerald-400"
+              : "border-fg/30 text-transparent"
+          }`}
+        >
+          <Check size={12} strokeWidth={3} />
+        </button>
+      )}
       <Link
-        href={`/planner/${entry.id}`}
-        className="flex w-full items-center gap-3 bg-card px-4 py-3.5"
+        href={target}
+        className="flex flex-1 min-w-0 items-center gap-3 py-3.5 pl-4"
       >
         <div className="flex-1 min-w-0">
-          <p className="text-base font-semibold truncate">{entry.label}</p>
+          <p
+            className={`text-base font-semibold truncate ${paid ? "line-through text-fg/55" : ""}`}
+          >
+            {entry.label}
+          </p>
           <p className="mt-0.5 text-xs text-fg/55">
             {formatPlannerDate(entry.date)}
           </p>
@@ -45,7 +92,7 @@ export default function PlannerEntryRow({ entry, runningBalance }: Props) {
           <span
             className={`block text-base font-bold tabular-nums ${
               isIncome ? "text-emerald-400" : "text-rose-400"
-            }`}
+            } ${paid ? "opacity-60" : ""}`}
           >
             {display}
           </span>
@@ -60,6 +107,20 @@ export default function PlannerEntryRow({ entry, runningBalance }: Props) {
           )}
         </div>
       </Link>
+    </div>
+  );
+
+  // New callers (folder/budget pages) handle delete via a row menu and
+  // pass an onDelete prop — render plain so we don't double up on the
+  // delete affordance.
+  if (onDelete) return body;
+
+  return (
+    <SwipeToDelete
+      onDelete={handleLegacyDelete}
+      ariaLabel={`Delete entry ${entry.label}`}
+    >
+      {body}
     </SwipeToDelete>
   );
 }
