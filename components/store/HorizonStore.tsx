@@ -1205,11 +1205,23 @@ function coreReducer(state: State, action: Action): State {
         ),
       };
     }
-    case "add_planner_entry":
+    case "add_planner_entry": {
+      // Make room at the target order so the new entry slots in cleanly.
+      // Any sibling whose order is >= the new entry's gets bumped down by
+      // one. For appends (caller picked maxOrder + 1) this loop is a
+      // no-op; for mid-list inserts (e.g. same-date grouping) it keeps
+      // ordering dense.
+      const insertOrder = action.entry.order ?? Number.MAX_SAFE_INTEGER;
+      const shifted = state.plannerEntries.map((e) => {
+        if (e.budgetId !== action.entry.budgetId) return e;
+        const o = e.order ?? Number.MAX_SAFE_INTEGER;
+        return o >= insertOrder ? { ...e, order: o + 1 } : e;
+      });
       return {
         ...state,
-        plannerEntries: [action.entry, ...state.plannerEntries],
+        plannerEntries: [action.entry, ...shifted],
       };
+    }
     case "update_planner_entry":
       return {
         ...state,
@@ -2464,9 +2476,12 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
 
   const addPlannerEntry = useCallback(
     (entry: Omit<PlannerEntry, "id" | "order">) => {
-      // New entries land at the end of their budget by default. We read
-      // stateRef so the value stays current even though the callback
-      // identity is stable.
+      // New entries land at the end of their budget by default. If the
+      // new entry shares a date with any existing sibling, slot it just
+      // after the most recent (highest-order) same-date row instead so
+      // dated rows stay grouped chronologically. The reducer shifts any
+      // higher orders to make room. We read stateRef so the value stays
+      // current even though the callback identity is stable.
       const siblings = stateRef.plannerEntries.filter(
         (e) => e.budgetId === entry.budgetId,
       );
@@ -2474,9 +2489,20 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
         (m, e) => Math.max(m, e.order ?? -1),
         -1,
       );
+      let insertOrder = maxOrder + 1;
+      if (entry.date) {
+        const sameDateMaxOrder = siblings.reduce((m, e) => {
+          if (e.date !== entry.date) return m;
+          const o = e.order ?? -1;
+          return o > m ? o : m;
+        }, -1);
+        if (sameDateMaxOrder >= 0) {
+          insertOrder = sameDateMaxOrder + 1;
+        }
+      }
       dispatch({
         type: "add_planner_entry",
-        entry: { id: makeId(), order: maxOrder + 1, ...entry },
+        entry: { ...entry, id: makeId(), order: insertOrder },
       });
     },
     [],
