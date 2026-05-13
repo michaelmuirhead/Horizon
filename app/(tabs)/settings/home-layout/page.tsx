@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Eye, EyeOff } from "lucide-react";
+import { ArrowDown, ArrowUp, Eye, EyeOff, GripVertical } from "lucide-react";
 import SubpageHeader from "@/components/layout/SubpageHeader";
 import { useHorizonStore } from "@/components/store/HorizonStore";
 import {
@@ -11,6 +11,7 @@ import {
   type HomeSectionId,
   type ResolvedHomeSection,
 } from "@/lib/homeLayout";
+import { useListReorderDrag } from "@/components/shared/useListReorderDrag";
 
 export default function HomeLayoutPage() {
   const { settings, setSettings } = useHorizonStore();
@@ -43,6 +44,22 @@ export default function HomeLayoutPage() {
     persist(next);
   }
 
+  function moveTo(fromIdx: number, toIdx: number) {
+    if (fromIdx === toIdx) return;
+    const next = layout.slice();
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    persist(next);
+  }
+
+  // Drag handle wires into useListReorderDrag. The matching
+  // data-list-row attribute below tells the hook which <li>s to
+  // measure when a drag starts.
+  const { gripProps, rowStyle, draggingId, dropIndex } = useListReorderDrag({
+    onReorder: moveTo,
+    dataAttribute: "list-row",
+  });
+
   function toggleHidden(idx: number) {
     const next = layout.slice();
     next[idx] = { ...next[idx], hidden: !next[idx].hidden };
@@ -59,24 +76,43 @@ export default function HomeLayoutPage() {
       <SubpageHeader title="Customize home" backHref="/settings" />
       <div className="px-4 pt-2 pb-10 space-y-4">
         <p className="text-sm text-fg/65">
-          Drag the up/down arrows to change section order, or hide the ones
-          you don&rsquo;t use. Sections that have nothing to show (e.g. no
-          upcoming debts) hide themselves automatically &mdash; this just
-          controls whether they appear at all.
+          Drag the grip handle to reorder, or use the arrows for
+          keyboard / screen-reader access. The eye icon hides a section.
+          Sections that have nothing to show (e.g. no upcoming debts) hide
+          themselves automatically &mdash; this controls whether they
+          appear at all.
         </p>
 
         <ul className="flex flex-col gap-2">
           {layout.map((s, idx) => {
             const meta = metaById.get(s.id);
             if (!meta) return null;
+            // The drop indicator renders ABOVE the row at the resolved
+            // drop index, so the user can see exactly where the dragged
+            // section will land.
+            const showDropAbove =
+              draggingId !== null &&
+              dropIndex !== null &&
+              dropIndex === idx &&
+              draggingId !== s.id;
             return (
               <li
                 key={s.id}
+                data-list-row={s.id}
+                style={rowStyle(s.id)}
                 className={`rounded-2xl bg-card-elevated px-3 py-3 ${
                   s.hidden ? "opacity-60" : ""
-                }`}
+                } ${showDropAbove ? "ring-2 ring-accent/70" : ""}`}
               >
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    aria-label={`Drag ${meta.label}`}
+                    {...gripProps(s.id)}
+                    className="grid h-8 w-7 shrink-0 place-items-center rounded-md text-fg/40 cursor-grab active:cursor-grabbing"
+                  >
+                    <GripVertical size={16} strokeWidth={2.2} />
+                  </button>
                   <div className="flex-1 min-w-0">
                     <p className="text-base font-bold truncate">
                       {meta.label}
