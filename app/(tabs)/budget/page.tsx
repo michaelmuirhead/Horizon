@@ -1,7 +1,8 @@
 "use client";
 
-import { Suspense, useCallback, useState } from "react";
+import { Suspense, useCallback, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Plus } from "lucide-react";
 import BudgetToolbar from "@/components/budget/BudgetToolbar";
 import CategoryGroupSection from "@/components/budget/CategoryGroupSection";
 import CategoryInspector from "@/components/budget/CategoryInspector";
@@ -9,6 +10,7 @@ import ReadyToAssignBanner from "@/components/budget/ReadyToAssignBanner";
 import NoteEditor from "@/components/forms/NoteEditor";
 import { useHorizonStore } from "@/components/store/HorizonStore";
 import { useMediaQuery } from "@/components/hooks/useMediaQuery";
+import { useCategoryReorderDrag } from "@/components/budget/useCategoryReorderDrag";
 import {
   ccPaymentRouting,
   monthKeyOf,
@@ -40,8 +42,17 @@ function Budget() {
   const searchParams = useSearchParams();
   const selectedCategoryId = searchParams.get("cat") ?? "";
   const isWide = useMediaQuery("(min-width: 1024px)");
-  const { groups, transactions, assignments, accounts, monthNotes, setMonthNote } =
-    useHorizonStore();
+  const {
+    groups,
+    transactions,
+    assignments,
+    accounts,
+    monthNotes,
+    setMonthNote,
+    addGroup,
+    reorderGroup,
+    reorderCategory,
+  } = useHorizonStore();
   const shownGroups = visibleGroups(groups);
   const ccCtx = ccPaymentRouting(accounts, groups);
   const now = new Date();
@@ -49,6 +60,27 @@ function Budget() {
     monthKeyOf(now.getFullYear(), now.getMonth()),
   );
   const ready = readyToAssignAmount(transactions, assignments, groups, ccCtx);
+
+  // Inline edit mode — toggled from the toolbar's pencil button.
+  // When on, each group/category gains drag, rename, add, and delete
+  // affordances directly on this page; the deeper /budget/manage
+  // route is no longer the only path to those actions.
+  const [editMode, setEditMode] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+
+  const { drag, gripPointerDown, rowStyle } = useCategoryReorderDrag({
+    groups: shownGroups,
+    reorderGroup,
+    reorderCategory,
+  });
+
+  function submitNewGroup(e: FormEvent) {
+    e.preventDefault();
+    const name = newGroupName.trim();
+    if (name === "") return;
+    addGroup(name);
+    setNewGroupName("");
+  }
 
   const setSelectedCategory = useCallback(
     (id: string | null) => {
@@ -68,6 +100,8 @@ function Budget() {
         monthKey={monthKey}
         onPrev={() => setMonthKey((m) => shiftMonthKey(m, -1))}
         onNext={() => setMonthKey((m) => shiftMonthKey(m, 1))}
+        editMode={editMode}
+        onToggleEdit={() => setEditMode((v) => !v)}
       />
       <ReadyToAssignBanner amount={ready} />
       <div className="mx-4 mb-3">
@@ -86,11 +120,39 @@ function Budget() {
               group={group}
               monthKey={monthKey}
               onSelectCategory={
-                isWide ? (id) => setSelectedCategory(id) : undefined
+                isWide && !editMode
+                  ? (id) => setSelectedCategory(id)
+                  : undefined
               }
               selectedCategoryId={isWide ? selectedCategoryId : undefined}
+              editMode={editMode}
+              drag={drag}
+              gripPointerDown={gripPointerDown}
+              rowStyle={rowStyle}
             />
           ))}
+
+          {editMode && (
+            <form
+              onSubmit={submitNewGroup}
+              className="mx-4 mt-3 mb-2 flex items-center gap-2 rounded-2xl bg-card p-4"
+            >
+              <input
+                type="text"
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+                placeholder="Add a group"
+                className="flex-1 rounded-md bg-card-elevated px-3 py-2 text-base outline-none placeholder:text-fg/40"
+              />
+              <button
+                type="submit"
+                aria-label="Add group"
+                className="grid h-10 w-10 place-items-center rounded-full bg-accent text-fg"
+              >
+                <Plus size={18} strokeWidth={2.5} />
+              </button>
+            </form>
+          )}
         </div>
         {isWide && (
           <aside
