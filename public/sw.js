@@ -2,7 +2,7 @@
 // /offline fallback for pages and stale-while-revalidate for same-origin
 // static assets. Bump CACHE when the shell list changes so old caches roll.
 
-const CACHE = "horizon-shell-v5";
+const CACHE = "horizon-shell-v6";
 const OFFLINE_URL = "/offline";
 const SHELL_URLS = [
   "/",
@@ -23,7 +23,16 @@ self.addEventListener("install", (event) => {
       .then((cache) => cache.addAll(SHELL_URLS))
       .catch(() => {}),
   );
-  self.skipWaiting();
+  // No skipWaiting() here — we want the new SW to sit in `waiting` so
+  // the page can surface a "New version available" banner and let the
+  // user choose when to reload. PWARegister posts SKIP_WAITING when the
+  // user opts in.
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener("activate", (event) => {
