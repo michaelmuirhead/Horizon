@@ -327,7 +327,7 @@ export default function SettingsPage() {
 // Firebase env vars so a local-only deploy doesn't show a feature it
 // can't fulfil.
 function CloudSyncSection() {
-  const { user, status, signIn, signOut, error } = useAuth();
+  const { user, status, signOut, error } = useAuth();
   const {
     currentBudgetJoinCode,
     shareCurrentBudget,
@@ -505,19 +505,15 @@ function CloudSyncSection() {
       ) : (
         <>
           <p className="mt-2 text-sm text-fg/70">
-            Sign in with Google to sync this budget across all of your
-            devices. Last write wins per change, so do edits on one device
-            at a time for now.
+            Sign in with your email and password to sync this budget across
+            all of your devices. Last write wins per change, so do edits on
+            one device at a time for now.
           </p>
-          <button
-            type="button"
-            onClick={() => signIn()}
-            disabled={status === "loading"}
-            className="mt-4 inline-flex items-center gap-2 rounded-full bg-accent px-5 py-2.5 text-sm font-bold text-fg disabled:opacity-40"
-          >
-            <Cloud size={16} strokeWidth={2.4} />
-            {status === "loading" ? "Loading…" : "Sign in with Google"}
-          </button>
+          <p className="mt-3 inline-flex items-center gap-2 rounded-md bg-card px-3 py-2 text-xs text-fg/70">
+            <Cloud size={14} strokeWidth={2.4} />
+            You&apos;re signed out — reload the app to see the sign-in
+            screen.
+          </p>
           {error && (
             <p className="mt-3 rounded-md bg-rose-900/30 px-3 py-2 text-xs text-rose-200">
               {error}
