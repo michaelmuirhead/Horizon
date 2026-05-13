@@ -303,9 +303,12 @@ export default function SavingsGoalDetailPage({
 
         <AttachPhotoCard
           value={goal.photoDataUrl}
-          onChange={(next) =>
+          storagePath={goal.photoStoragePath}
+          onChange={(next, storagePath) =>
             updateSavingsGoal(goal.id, {
               photoDataUrl: next === null ? undefined : next,
+              photoStoragePath:
+                storagePath === null ? undefined : storagePath,
             })
           }
           label="Goal photo"

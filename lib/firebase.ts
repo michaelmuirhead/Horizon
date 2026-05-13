@@ -8,11 +8,16 @@
 import type { FirebaseApp } from "firebase/app";
 import type { Auth } from "firebase/auth";
 import type { Firestore } from "firebase/firestore";
+import type { FirebaseStorage } from "firebase/storage";
 
 type FirebaseHandles = {
   app: FirebaseApp;
   auth: Auth;
   db: Firestore;
+  // Lazily populated; only present once Storage is needed (e.g. the
+  // first attachment upload). Cloud Sync without attachments doesn't
+  // need to pay the import cost.
+  storage: FirebaseStorage;
 };
 
 let cached: FirebaseHandles | null | undefined;
@@ -54,15 +59,21 @@ export async function getFirebase(): Promise<FirebaseHandles | null> {
     cached = null;
     return null;
   }
-  const [{ initializeApp, getApps, getApp }, { getAuth }, { getFirestore }] =
-    await Promise.all([
-      import("firebase/app"),
-      import("firebase/auth"),
-      import("firebase/firestore"),
-    ]);
+  const [
+    { initializeApp, getApps, getApp },
+    { getAuth },
+    { getFirestore },
+    { getStorage },
+  ] = await Promise.all([
+    import("firebase/app"),
+    import("firebase/auth"),
+    import("firebase/firestore"),
+    import("firebase/storage"),
+  ]);
   const app = getApps().length === 0 ? initializeApp(cfg) : getApp();
   const auth = getAuth(app);
   const db = getFirestore(app);
-  cached = { app, auth, db };
+  const storage = getStorage(app);
+  cached = { app, auth, db, storage };
   return cached;
 }

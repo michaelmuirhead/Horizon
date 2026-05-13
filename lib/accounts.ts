@@ -57,10 +57,13 @@ export type Account = {
   // separately so we can compute gain/loss = currentValue - contributions.
   investmentValuations?: InvestmentValuation[];
   // Optional photo attached to the account itself — typically the loan
-  // agreement / bill statement / contract. Stored inline as a data URL
-  // (image/* MIME) like Transaction.receiptDataUrl, downscaled
-  // client-side at upload to keep localStorage from blowing up.
+  // agreement / bill statement / contract. Either an inline data URL
+  // (legacy / local-only mode) or an https Firebase Storage download
+  // URL (when Cloud Sync is configured + user is signed in). The
+  // parallel storage path lets the UI clean up the Storage object on
+  // replace / remove; absent for legacy inline values.
   photoDataUrl?: string;
+  photoStoragePath?: string;
 };
 
 export const CC_PAYMENTS_GROUP_NAME = "Credit Card Payments";

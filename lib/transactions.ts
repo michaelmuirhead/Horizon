@@ -26,10 +26,13 @@ export type Transaction = {
   // Free-form labels for cross-cutting reporting ("vacation 2026",
   // "tax-deductible"). Stored lowercased; never includes empty strings.
   tags?: string[];
-  // Receipt photo as a data URL (image/* MIME). Stored inline so the
-  // transaction is fully self-contained; downsized client-side at upload
-  // to keep localStorage from blowing up.
+  // Receipt photo / document. Either an inline data URL (legacy /
+  // local-only mode) or an https Firebase Storage download URL (when
+  // Cloud Sync + auth are wired up). The parallel storage path lets
+  // the UI clean up the Storage object on replace / remove; absent
+  // for legacy inline values.
   receiptDataUrl?: string;
+  receiptStoragePath?: string;
 };
 
 export function normalizeTags(input: string[] | undefined): string[] | undefined {

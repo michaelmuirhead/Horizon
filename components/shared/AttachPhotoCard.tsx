@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { Camera, FolderOpen, ImageIcon, X } from "lucide-react";
+import {
+  Camera,
+  FolderOpen,
+  ImageIcon,
+  Loader2,
+  X,
+} from "lucide-react";
+import { useAuth } from "@/components/auth/AuthContext";
 import { resizeImageFile } from "@/lib/imageResize";
 import {
   PDF_SIZE_LIMIT_LABEL,
@@ -9,80 +16,115 @@ import {
   isPdfTooLargeError,
   readPdfAsDataUrl,
 } from "@/lib/attachmentRead";
+import {
+  deleteAttachment,
+  isStorageUrl,
+  uploadAttachment,
+} from "@/lib/cloudStorage";
 
 type Props = {
-  // Current photo as a data URL, or undefined when none is attached.
+  // Current attachment value: either an https Firebase Storage URL,
+  // an inline data URL, or undefined when none is attached.
   value: string | undefined;
-  // Called with a fresh data URL on add/replace and null on remove.
-  onChange: (next: string | null) => void;
-  // What the attached photo represents — drives the section label
+  // The Storage object path for the current value. Present only when
+  // the attachment lives in Storage — undefined for legacy inline
+  // data URLs. The card uses it to clean up on replace / remove.
+  storagePath?: string;
+  // Called with a fresh value + path on add/replace and (null, null)
+  // on remove. storagePath is null when we fall back to inline.
+  onChange: (next: string | null, storagePath: string | null) => void;
+  // What the attached file represents — drives the section label
   // and the file-input id so multiple cards on the same page don't
   // collide. e.g. "Statement", "Loan agreement", "Goal photo".
   label: string;
   // Stable id segment that scopes the file <input> per consumer
-  // when more than one card might render on the same page. Pass the
-  // account id / goal id.
+  // when more than one card might render on the same page.
   scopeId: string;
 };
 
-// Shared "attach a photo" card used by liability accounts (loans /
-// bills — the statement or contract) and by savings goals (the thing
-// being saved for). Mirrors the receipt UX on TransactionForm:
-// downscale client-side via resizeImageFile, store as a data URL,
-// show inline with a remove button.
-//
-// Three pick paths:
-//   • Camera   — capture="environment", iOS opens the rear camera.
-//   • Library  — accept="image/*", iOS opens the photo picker.
-//   • Files    — no accept attribute, iOS skips the photo action
-//                sheet and opens the Files app directly (iCloud
-//                Drive, On My iPhone, third-party providers).
-//
-// Browsers don't let one <input> toggle capture / accept
-// dynamically — each path needs its own element. The Files input
-// can yield a non-image (PDF, doc); resizeImageFile rejects that
-// and the existing catch leaves the current photo untouched.
+// Shared attach-a-file card. Routes uploads through Firebase Storage
+// when the user is signed in + cloud sync is configured, so PDFs and
+// images don't bloat the Firestore budget doc (1MB limit per doc).
+// Falls back to inline data URLs for the local-only / signed-out
+// path. Existing inline values keep rendering unchanged.
 export default function AttachPhotoCard({
   value,
+  storagePath,
   onChange,
   label,
   scopeId,
 }: Props) {
+  const { user } = useAuth();
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const libraryInputRef = useRef<HTMLInputElement>(null);
   const filesInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
-  // Auto-clear the error pill after a beat so a stale "too large"
-  // message doesn't linger after the user picks a valid file.
   useEffect(() => {
     if (!error) return;
     const t = window.setTimeout(() => setError(null), 4000);
     return () => window.clearTimeout(t);
   }, [error]);
 
+  // Best-effort cleanup of the previous Storage object. Fire-and-forget
+  // — a delete failure just leaves an orphan, never blocks the user.
+  function cleanupPrev() {
+    if (storagePath) void deleteAttachment(storagePath);
+  }
+
+  async function commitFromFile(file: File) {
+    setError(null);
+    setUploading(true);
+    try {
+      // Determine the blob we'll store. PDFs go through readPdfAsDataUrl
+      // mainly for the size check; we'll re-derive a Blob from the data
+      // URL if we end up taking the inline path. Images flow through
+      // resizeImageFile to a JPEG data URL.
+      const isPdf = file.type === "application/pdf";
+      const processedDataUrl = isPdf
+        ? await readPdfAsDataUrl(file)
+        : await resizeImageFile(file);
+
+      // Cloud Storage path when signed in + configured. The upload
+      // helper rejects with "storage-not-configured" when Firebase
+      // isn't wired up; we catch and fall through to inline storage.
+      if (user) {
+        try {
+          const blob = await dataUrlToBlob(processedDataUrl);
+          const stored = await uploadAttachment(user.uid, blob, scopeId);
+          cleanupPrev();
+          onChange(stored.url, stored.path);
+          return;
+        } catch {
+          // Fall through to inline below.
+        }
+      }
+      cleanupPrev();
+      onChange(processedDataUrl, null);
+    } catch (err) {
+      if (isPdfTooLargeError(err)) {
+        setError(`PDF is too large — keep it under ${PDF_SIZE_LIMIT_LABEL}.`);
+      }
+      // Other errors (non-image / unreadable) silently leave the
+      // existing attachment alone.
+    } finally {
+      setUploading(false);
+    }
+  }
+
   function handlePickedFrom(ref: React.RefObject<HTMLInputElement | null>) {
     return async (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if (!file) return;
-      setError(null);
-      try {
-        if (file.type === "application/pdf") {
-          const dataUrl = await readPdfAsDataUrl(file);
-          onChange(dataUrl);
-        } else {
-          const dataUrl = await resizeImageFile(file);
-          onChange(dataUrl);
-        }
-      } catch (err) {
-        if (isPdfTooLargeError(err)) {
-          setError(`PDF is too large — keep it under ${PDF_SIZE_LIMIT_LABEL}.`);
-        }
-        // Other errors (non-image picked via Files, corrupt file)
-        // silently leave the existing photo alone.
-      }
       if (ref.current) ref.current.value = "";
+      if (!file) return;
+      await commitFromFile(file);
     };
+  }
+
+  function handleRemove() {
+    cleanupPrev();
+    onChange(null, null);
   }
 
   const cameraInputId = `photo-${scopeId}-camera`;
@@ -96,10 +138,13 @@ export default function AttachPhotoCard({
           {label}
         </p>
         <div className="flex items-center gap-2">
-          {value && (
+          {uploading && (
+            <Loader2 size={14} className="animate-spin text-fg/55" />
+          )}
+          {value && !uploading && (
             <button
               type="button"
-              onClick={() => onChange(null)}
+              onClick={handleRemove}
               aria-label={`Remove ${label.toLowerCase()}`}
               className="grid h-7 w-7 place-items-center rounded-full bg-card-elevated text-fg/70"
             >
@@ -158,7 +203,7 @@ export default function AttachPhotoCard({
       )}
       {value && (
         <div className="mt-3">
-          {isPdfDataUrl(value) ? (
+          {isPdfDataUrl(value) || value.toLowerCase().endsWith(".pdf") ? (
             <div className="overflow-hidden rounded-xl bg-card-elevated">
               <iframe
                 src={value}
@@ -179,6 +224,7 @@ export default function AttachPhotoCard({
             <img
               src={value}
               alt={label}
+              loading={isStorageUrl(value) ? "lazy" : undefined}
               className="block max-h-72 w-full rounded-xl object-contain bg-card-elevated"
             />
           )}
@@ -186,4 +232,12 @@ export default function AttachPhotoCard({
       )}
     </section>
   );
+}
+
+// Convert a data URL back into a Blob we can hand to uploadBytes.
+// Faster than re-fetching the data URL via fetch() for the typical
+// sizes we deal with here (a few hundred KB).
+async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+  const res = await fetch(dataUrl);
+  return res.blob();
 }

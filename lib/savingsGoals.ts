@@ -38,9 +38,11 @@ export type SavingsGoal = {
   // when the goal is created and kept in sync on rename/delete.
   categoryId?: string;
   // Optional photo attached to the goal — typically the thing they're
-  // saving for (bike, vacation, etc.). Stored inline as a data URL like
-  // Transaction.receiptDataUrl, downscaled client-side at upload.
+  // saving for (bike, vacation, etc.). Either an inline data URL or an
+  // https Firebase Storage download URL; see Account.photoDataUrl for
+  // the full contract.
   photoDataUrl?: string;
+  photoStoragePath?: string;
 };
 
 // Display name and stable id we use when looking for or creating the
