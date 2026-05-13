@@ -46,7 +46,7 @@ function NewTargetForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const preselectId = searchParams.get("category") ?? "";
-  const { groups, targets, setTarget } = useHorizonStore();
+  const { groups, targets, setTarget, addCategory } = useHorizonStore();
 
   // Skip hidden categories in the picker, but keep showing whichever
   // category the editor was opened against (e.g. via deep-link).
@@ -58,8 +58,21 @@ function NewTargetForm() {
       ? preselectId
       : (allCategories[0]?.id ?? "");
   const initialTarget = targets[initialCategoryId];
+  const initialCategoryName =
+    allCategories.find((c) => c.id === initialCategoryId)?.name ?? "";
 
+  // Free-text category field. When the typed name matches an existing
+  // category we keep `categoryId` pointing at it and the target attaches
+  // there; when it doesn't match, `categoryId` is "" and we'll mint a
+  // new category on submit (placed in `newCategoryGroupId`).
   const [categoryId, setCategoryId] = useState<string>(initialCategoryId);
+  const [categoryName, setCategoryName] = useState<string>(initialCategoryName);
+  const firstVisibleGroupId =
+    groups.find((g) => g.categories.length > 0)?.id ??
+    groups[0]?.id ??
+    "";
+  const [newCategoryGroupId, setNewCategoryGroupId] =
+    useState<string>(firstVisibleGroupId);
   const [kind, setKind] = useState<Kind>(initialTarget?.kind ?? "set-aside");
   const [cadence, setCadence] = useState<Cadence>(
     initialTarget && initialTarget.kind === "set-aside"
@@ -83,22 +96,39 @@ function NewTargetForm() {
 
   const existing = categoryId ? targets[categoryId] : undefined;
 
-  function handleCategoryChange(nextId: string) {
-    setCategoryId(nextId);
-    const t = targets[nextId];
-    if (t) {
-      setKind(t.kind);
-      setAmount(t.amount.toString());
-      setPaused(t.paused === true);
-      setAutoFund(t.autoFund === true);
-      if (t.kind === "set-aside") setCadence(t.cadence);
-      if (t.kind === "by-date") setDueDate(t.dueDate);
+  // When the typed name exactly matches an existing category (case-
+  // insensitive), lock onto that id and preload its target. Anything
+  // else is treated as a new category to be created on submit.
+  function handleCategoryNameChange(next: string) {
+    setCategoryName(next);
+    const trimmedLower = next.trim().toLowerCase();
+    const match = allCategories.find(
+      (c) => c.name.toLowerCase() === trimmedLower,
+    );
+    if (match) {
+      setCategoryId(match.id);
+      const t = targets[match.id];
+      if (t) {
+        setKind(t.kind);
+        setAmount(t.amount.toString());
+        setPaused(t.paused === true);
+        setAutoFund(t.autoFund === true);
+        if (t.kind === "set-aside") setCadence(t.cadence);
+        if (t.kind === "by-date") setDueDate(t.dueDate);
+      }
+    } else {
+      setCategoryId("");
     }
   }
 
   const parsed = parseFloat(amount);
+  const trimmedName = categoryName.trim();
+  const isNewCategory = trimmedName !== "" && categoryId === "";
   const valid =
-    categoryId !== "" && Number.isFinite(parsed) && parsed > 0;
+    trimmedName !== "" &&
+    Number.isFinite(parsed) &&
+    parsed > 0 &&
+    (categoryId !== "" || newCategoryGroupId !== "");
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -117,15 +147,22 @@ function NewTargetForm() {
     } else {
       target = { kind: "by-date", amount: parsed, dueDate, ...flags };
     }
-    setTarget(categoryId, target);
-    router.push("/");
+    // Mint a fresh category on the fly if the user typed a name that
+    // doesn't yet exist. addCategory returns the new id so the target
+    // can be wired up in the same submit handler.
+    const resolvedId =
+      categoryId !== ""
+        ? categoryId
+        : addCategory(newCategoryGroupId, trimmedName);
+    setTarget(resolvedId, target);
+    router.push("/budget");
   }
 
   return (
     <>
       <SubpageHeader
         title={existing ? "Edit Target" : "Add Target"}
-        backHref="/"
+        backHref="/budget"
       />
       <form onSubmit={handleSubmit} className="px-4 pt-2 pb-10 space-y-4">
         <SegmentedField<Kind>
@@ -141,32 +178,42 @@ function NewTargetForm() {
 
         <FormGroup>
           <FormRow label="Category" htmlFor="target-category">
-            {allCategories.length === 0 ? (
-              <span className="text-fg/55">No categories</span>
-            ) : (
-              <Select
-                id="target-category"
-                value={categoryId}
-                onChange={(e) => handleCategoryChange(e.target.value)}
-              >
-                {groups.map((g) => {
-                  const cats = g.categories.filter(
-                    (c) => !c.hidden || c.id === preselectId,
-                  );
-                  if (cats.length === 0) return null;
-                  return (
-                    <optgroup key={g.id} label={g.name} className="bg-card">
-                      {cats.map((c) => (
-                        <option key={c.id} value={c.id} className="bg-card">
-                          {c.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  );
-                })}
-              </Select>
-            )}
+            <TextInput
+              id="target-category"
+              type="text"
+              value={categoryName}
+              onChange={(e) => handleCategoryNameChange(e.target.value)}
+              placeholder="Type or pick a category"
+              list="target-category-options"
+              autoComplete="off"
+              required
+            />
+            {/* Native datalist gives free typing + autocomplete from
+                existing categories without forcing a value-must-match
+                constraint. New names fall through to the create-on-
+                submit path below. */}
+            <datalist id="target-category-options">
+              {allCategories.map((c) => (
+                <option key={c.id} value={c.name} />
+              ))}
+            </datalist>
           </FormRow>
+
+          {isNewCategory && groups.length > 0 && (
+            <FormRow label="Add to group" htmlFor="target-new-group">
+              <Select
+                id="target-new-group"
+                value={newCategoryGroupId}
+                onChange={(e) => setNewCategoryGroupId(e.target.value)}
+              >
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id} className="bg-card">
+                    {g.name}
+                  </option>
+                ))}
+              </Select>
+            </FormRow>
+          )}
 
           <FormRow label={KIND_AMOUNT_LABEL[kind]} htmlFor="target-amount">
             <span className="flex items-center justify-end gap-1">
@@ -274,7 +321,7 @@ function NewTargetForm() {
             type="button"
             onClick={() => {
               setTarget(categoryId, null);
-              router.push("/");
+              router.push("/budget");
             }}
             className="block w-full rounded-full border border-rose-400/40 px-5 py-3.5 text-base font-bold text-rose-400"
           >
