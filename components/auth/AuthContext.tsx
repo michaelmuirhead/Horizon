@@ -23,12 +23,51 @@ type Status = "unconfigured" | "loading" | "signed-out" | "signed-in";
 type Ctx = {
   user: AuthUser | null;
   status: Status;
-  signIn: () => Promise<void>;
+  signInWithEmail: (email: string, password: string) => Promise<void>;
+  signUpWithEmail: (email: string, password: string) => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   error: string | null;
+  clearError: () => void;
 };
 
 const AuthContext = createContext<Ctx | null>(null);
+
+// Translates a raw Firebase auth error into something a person can read.
+// We keep this small and only cover the codes that surface in the email +
+// password flows we expose.
+function friendlyAuthError(e: unknown): string {
+  const code = (e as { code?: string }).code ?? "";
+  switch (code) {
+    case "auth/invalid-email":
+      return "That email address doesn't look right.";
+    case "auth/user-disabled":
+      return "This account has been disabled.";
+    case "auth/user-not-found":
+    case "auth/wrong-password":
+    case "auth/invalid-credential":
+      return "Email or password is incorrect.";
+    case "auth/email-already-in-use":
+      return "An account with that email already exists. Try signing in.";
+    case "auth/weak-password":
+      return "Password is too weak. Use at least 6 characters.";
+    case "auth/missing-password":
+      return "Please enter a password.";
+    case "auth/too-many-requests":
+      return "Too many attempts. Wait a moment and try again.";
+    case "auth/network-request-failed":
+      return "Network error. Check your connection and try again.";
+    case "auth/operation-not-allowed":
+      return "Email/password sign-in isn't enabled for this app yet. Turn it on in the Firebase console.";
+    case "auth/unauthorized-domain":
+      return "This domain isn't authorized for sign-in. Add it in the Firebase console.";
+    case "auth/api-key-not-valid.-please-pass-a-valid-api-key.":
+    case "auth/api-key-not-valid":
+      return "Sign-in is misconfigured (invalid API key). Check Firebase env vars and Google Cloud key restrictions.";
+    default:
+      return (e as { message?: string }).message ?? "Sign-in failed.";
+  }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const configured = useMemo(() => isFirebaseConfigured(), []);
@@ -71,7 +110,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [configured]);
 
-  const signIn = useCallback(async () => {
+  const signInWithEmail = useCallback(
+    async (email: string, password: string) => {
+      setError(null);
+      const handles = await getFirebase();
+      if (!handles) {
+        setError("Cloud sync isn't configured for this app.");
+        return;
+      }
+      try {
+        const { signInWithEmailAndPassword } = await import("firebase/auth");
+        await signInWithEmailAndPassword(handles.auth, email.trim(), password);
+      } catch (e: unknown) {
+        setError(friendlyAuthError(e));
+      }
+    },
+    [],
+  );
+
+  const signUpWithEmail = useCallback(
+    async (email: string, password: string) => {
+      setError(null);
+      const handles = await getFirebase();
+      if (!handles) {
+        setError("Cloud sync isn't configured for this app.");
+        return;
+      }
+      try {
+        const { createUserWithEmailAndPassword } = await import(
+          "firebase/auth"
+        );
+        await createUserWithEmailAndPassword(
+          handles.auth,
+          email.trim(),
+          password,
+        );
+      } catch (e: unknown) {
+        setError(friendlyAuthError(e));
+      }
+    },
+    [],
+  );
+
+  const resetPassword = useCallback(async (email: string) => {
     setError(null);
     const handles = await getFirebase();
     if (!handles) {
@@ -79,21 +160,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     try {
-      const { GoogleAuthProvider, signInWithPopup } = await import(
-        "firebase/auth"
-      );
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(handles.auth, provider);
+      const { sendPasswordResetEmail } = await import("firebase/auth");
+      await sendPasswordResetEmail(handles.auth, email.trim());
     } catch (e: unknown) {
-      // Common cases: user closed the popup, or third-party cookies are
-      // blocked. We swallow the cancellation case quietly.
-      const code = (e as { code?: string }).code ?? "";
-      if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
-        return;
-      }
-      setError(
-        (e as { message?: string }).message ?? "Sign-in failed.",
-      );
+      setError(friendlyAuthError(e));
     }
   }, []);
 
@@ -104,9 +174,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await fbSignOut(handles.auth);
   }, []);
 
+  const clearError = useCallback(() => setError(null), []);
+
   const value = useMemo<Ctx>(
-    () => ({ user, status, signIn, signOut, error }),
-    [user, status, signIn, signOut, error],
+    () => ({
+      user,
+      status,
+      signInWithEmail,
+      signUpWithEmail,
+      resetPassword,
+      signOut,
+      error,
+      clearError,
+    }),
+    [
+      user,
+      status,
+      signInWithEmail,
+      signUpWithEmail,
+      resetPassword,
+      signOut,
+      error,
+      clearError,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
