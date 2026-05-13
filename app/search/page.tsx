@@ -9,7 +9,21 @@ import { formatCurrency } from "@/lib/format";
 
 const MAX_PER_GROUP = 12;
 
+// Normalize for matching: lowercase, strip diacritics ("café" → "cafe"),
+// drop everything that isn't alphanumeric. Lets "kroger's #455" match a
+// query of "krogers" and "Café Du Monde" match "cafe".
 function normalize(s: string): string {
+  return s
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+// The raw, lowercase form is still useful for amount-prefix matching
+// where the user types a decimal like "12.50". Keep it as a separate
+// helper so the call sites read clearly.
+function rawLower(s: string): string {
   return s.trim().toLowerCase();
 }
 
@@ -24,11 +38,12 @@ export default function SearchPage() {
   const [q, setQ] = useState("");
 
   const needle = normalize(q);
+  const rawNeedle = rawLower(q);
   // Empty query → empty results. We deliberately don't show "everything"
   // by default: the visible-card cost is high on mobile and the user
   // hasn't expressed intent yet.
   const results = useMemo(() => {
-    if (needle === "") {
+    if (needle === "" && rawNeedle === "") {
       return {
         transactions: [],
         accounts: [],
@@ -41,52 +56,54 @@ export default function SearchPage() {
 
     const matchedTransactions = transactions
       .filter((t) => {
-        const hay =
-          `${t.payee} ${t.category} ${t.memo ?? ""} ${t.account} ${(t.tags ?? []).join(" ")}`.toLowerCase();
-        if (hay.includes(needle)) return true;
-        // Allow numeric searches like "12.50" — strip the dollar sign /
-        // commas in the haystack on the fly.
+        const hay = normalize(
+          `${t.payee} ${t.category} ${t.memo ?? ""} ${t.account} ${(t.tags ?? []).join(" ")}`,
+        );
+        if (needle !== "" && hay.includes(needle)) return true;
+        // Amount-prefix match — keep dot/comma for natural number entry.
         const amountStr = String(Math.abs(t.amount));
-        return amountStr.startsWith(needle);
+        return rawNeedle !== "" && amountStr.startsWith(rawNeedle);
       })
       .slice(0, MAX_PER_GROUP);
 
     const matchedAccounts = accounts
-      .filter((a) => a.name.toLowerCase().includes(needle))
+      .filter((a) => needle !== "" && normalize(a.name).includes(needle))
       .slice(0, MAX_PER_GROUP);
 
     const matchedCategories: { groupName: string; categoryName: string }[] = [];
-    for (const g of groups) {
-      for (const c of g.categories) {
-        if (c.hidden) continue;
-        if (c.name.toLowerCase().includes(needle)) {
-          matchedCategories.push({ groupName: g.name, categoryName: c.name });
-          if (matchedCategories.length >= MAX_PER_GROUP) break;
+    if (needle !== "") {
+      for (const g of groups) {
+        for (const c of g.categories) {
+          if (c.hidden) continue;
+          if (normalize(c.name).includes(needle)) {
+            matchedCategories.push({ groupName: g.name, categoryName: c.name });
+            if (matchedCategories.length >= MAX_PER_GROUP) break;
+          }
         }
+        if (matchedCategories.length >= MAX_PER_GROUP) break;
       }
-      if (matchedCategories.length >= MAX_PER_GROUP) break;
     }
 
     // Distinct payees from the matched-transactions plus any other
     // payees that contain the needle but didn't surface as transactions
     // because they're beyond MAX_PER_GROUP. Capped to MAX_PER_GROUP too.
     const payeeSet = new Set<string>();
-    for (const t of transactions) {
-      if (t.payee.toLowerCase().includes(needle)) {
-        payeeSet.add(t.payee);
-        if (payeeSet.size >= MAX_PER_GROUP) break;
+    if (needle !== "") {
+      for (const t of transactions) {
+        if (normalize(t.payee).includes(needle)) {
+          payeeSet.add(t.payee);
+          if (payeeSet.size >= MAX_PER_GROUP) break;
+        }
       }
     }
     const matchedPayees = Array.from(payeeSet);
 
     const matchedPlanner = plannerEntries
-      .filter((e) =>
-        `${e.label}`.toLowerCase().includes(needle),
-      )
+      .filter((e) => needle !== "" && normalize(e.label).includes(needle))
       .slice(0, MAX_PER_GROUP);
 
     const matchedGoals = savingsGoals
-      .filter((g) => g.name.toLowerCase().includes(needle))
+      .filter((g) => needle !== "" && normalize(g.name).includes(needle))
       .slice(0, MAX_PER_GROUP);
 
     return {
@@ -97,7 +114,15 @@ export default function SearchPage() {
       plannerEntries: matchedPlanner,
       savingsGoals: matchedGoals,
     };
-  }, [needle, transactions, accounts, groups, plannerEntries, savingsGoals]);
+  }, [
+    needle,
+    rawNeedle,
+    transactions,
+    accounts,
+    groups,
+    plannerEntries,
+    savingsGoals,
+  ]);
 
   const totalHits =
     results.transactions.length +
