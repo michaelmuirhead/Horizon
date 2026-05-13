@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/components/auth/AuthContext";
 import { useHorizonStore } from "@/components/store/HorizonStore";
+import { mergePayloads } from "@/lib/cloudMerge";
 import {
   pullBudget,
   pullHouseholdBudget,
@@ -62,11 +63,17 @@ export default function CloudSyncBridge() {
   const initialSyncDoneRef = useRef<{ uid: string; syncKey: string } | null>(
     null,
   );
+  // Live `exportBackup` for the subscribe handler — that effect's deps
+  // intentionally exclude exportBackup (it changes every render and we
+  // don't want to resubscribe each time), so we read the current one
+  // through a ref instead.
+  const exportBackupRef = useRef(exportBackup);
+  exportBackupRef.current = exportBackup;
 
   // Initial sync on sign-in (or budget switch / household join while signed in).
-  // Last-writer-wins: compare the cloud doc's `updatedAt` against the local
-  // `lastModifiedAt` stamp the store maintains, and adopt whichever is newer.
-  // No user prompt — sign-in shouldn't make the user babysit a dialog.
+  // Picks a winner by stamp instead of prompting, and unions additive
+  // collections via mergePayloads so offline edits made on each device
+  // since the last sync both survive.
   useEffect(() => {
     if (status !== "signed-in" || !user || !currentBudgetId) {
       initialSyncDoneRef.current = null;
@@ -99,25 +106,14 @@ export default function CloudSyncBridge() {
         initialSyncDoneRef.current = { uid: user.uid, syncKey };
         return;
       }
-      if (remote.updatedAt > localStamp) {
-        // Cloud is newer — adopt it. restoreFromBackup picks up the cloud's
-        // lastModifiedAt so subsequent comparisons stay aligned.
-        restoreFromBackup(
-          remote.payload as Parameters<typeof restoreFromBackup>[0],
-        );
-        lastSyncedAtRef.current = remote.updatedAt;
-      } else if (localStamp > remote.updatedAt) {
-        try {
-          await push(localPayload, localStamp);
-          lastSyncedAtRef.current = localStamp;
-        } catch {
-          /* swallow */
-        }
-      } else {
-        // Same vintage — nothing to do, just record the stamp so the live
-        // subscription can filter echoes.
-        lastSyncedAtRef.current = remote.updatedAt;
-      }
+      // Both sides have content. Merge keeps anything local added since
+      // we last saw the cloud (and vice versa). The merge's
+      // lastModifiedAt = max(local, remote) becomes the new local stamp;
+      // the push effect will flush the merged payload back to the cloud
+      // if it carries local-only material, otherwise it stays put.
+      const merged = mergePayloads(localPayload, remote.payload as Parameters<typeof mergePayloads>[1]);
+      restoreFromBackup(merged as Parameters<typeof restoreFromBackup>[0]);
+      lastSyncedAtRef.current = remote.updatedAt;
       initialSyncDoneRef.current = { uid: user.uid, syncKey };
     })();
     return () => {
@@ -156,8 +152,10 @@ export default function CloudSyncBridge() {
     exportBackup,
   ]);
 
-  // Live updates from other devices. Echoes of our own writes are filtered
-  // by the `updatedAt <= lastSyncedAtRef` check.
+  // Live updates from other devices. We merge incoming changes into the
+  // local payload instead of clobbering, so an edit-in-progress on this
+  // device survives a concurrent push from another. Echoes of our own
+  // writes are filtered by the `updatedAt <= lastSyncedAtRef` check.
   useEffect(() => {
     if (status !== "signed-in" || !user || !currentBudgetId) return;
     let cancelled = false;
@@ -165,9 +163,9 @@ export default function CloudSyncBridge() {
     subscribeFn((remote) => {
       if (cancelled) return;
       if (remote.updatedAt <= lastSyncedAtRef.current) return;
-      restoreFromBackup(
-        remote.payload as Parameters<typeof restoreFromBackup>[0],
-      );
+      const localPayload = exportBackupRef.current();
+      const merged = mergePayloads(localPayload, remote.payload as Parameters<typeof mergePayloads>[1]);
+      restoreFromBackup(merged as Parameters<typeof restoreFromBackup>[0]);
       lastSyncedAtRef.current = remote.updatedAt;
     }).then((unsub) => {
       if (cancelled) unsub();
