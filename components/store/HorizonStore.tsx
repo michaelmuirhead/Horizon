@@ -303,7 +303,7 @@ type Action =
   | { type: "add_group"; name: string }
   | { type: "rename_group"; groupId: string; name: string }
   | { type: "delete_group"; groupId: string }
-  | { type: "add_category"; groupId: string; name: string }
+  | { type: "add_category"; groupId: string; name: string; id: string }
   | { type: "rename_category"; categoryId: string; name: string }
   | { type: "set_category_note"; categoryId: string; note: string }
   | { type: "set_category_hidden"; categoryId: string; hidden: boolean }
@@ -313,7 +313,7 @@ type Action =
   | { type: "move_group"; groupId: string; delta: -1 | 1 }
   | { type: "move_category"; categoryId: string; delta: -1 | 1 }
   | { type: "reorder_group"; groupId: string; targetIndex: number }
-  | { type: "reorder_category"; categoryId: string; targetIndex: number }
+  | { type: "reorder_category"; categoryId: string; targetIndex: number; destGroupId?: string }
   | { type: "set_account_note"; accountId: string; note: string }
   | {
       type: "set_account_debt_terms";
@@ -1002,7 +1002,7 @@ function coreReducer(state: State, action: Action): State {
                 ...g,
                 categories: [
                   ...g.categories,
-                  { id: makeId(), name: action.name },
+                  { id: action.id, name: action.name },
                 ],
               }
             : g,
@@ -1218,6 +1218,33 @@ function coreReducer(state: State, action: Action): State {
         (c) => c.id === action.categoryId,
       );
       if (idx < 0) return state;
+      // Cross-group move: pull the category from its current group and
+      // splice it into the destination group at the target index. When
+      // the destination is the SAME group as the owner the action falls
+      // through to the within-group reorder path below.
+      const destGroup =
+        action.destGroupId !== undefined && action.destGroupId !== owner.id
+          ? state.groups.find((g) => g.id === action.destGroupId)
+          : null;
+      if (destGroup) {
+        const item = owner.categories[idx];
+        const ownerNext = owner.categories.slice();
+        ownerNext.splice(idx, 1);
+        const destNext = destGroup.categories.slice();
+        const dropAt = Math.max(
+          0,
+          Math.min(destNext.length, action.targetIndex),
+        );
+        destNext.splice(dropAt, 0, item);
+        return {
+          ...state,
+          groups: state.groups.map((g) => {
+            if (g.id === owner.id) return { ...g, categories: ownerNext };
+            if (g.id === destGroup.id) return { ...g, categories: destNext };
+            return g;
+          }),
+        };
+      }
       const target = Math.max(
         0,
         Math.min(owner.categories.length - 1, action.targetIndex),
@@ -1695,7 +1722,9 @@ type Ctx = {
   addGroup: (name: string) => void;
   renameGroup: (groupId: string, name: string) => void;
   deleteGroup: (groupId: string) => void;
-  addCategory: (groupId: string, name: string) => void;
+  // Returns the id of the new category so callers (e.g. /goal/new
+  // creating a category on the fly) can immediately reference it.
+  addCategory: (groupId: string, name: string) => string;
   renameCategory: (categoryId: string, name: string) => void;
   setCategoryNote: (categoryId: string, note: string) => void;
   setCategoryHidden: (categoryId: string, hidden: boolean) => void;
@@ -1705,7 +1734,13 @@ type Ctx = {
   moveGroup: (groupId: string, delta: -1 | 1) => void;
   moveCategory: (categoryId: string, delta: -1 | 1) => void;
   reorderGroup: (groupId: string, targetIndex: number) => void;
-  reorderCategory: (categoryId: string, targetIndex: number) => void;
+  // destGroupId moves the category into a different group at
+  // targetIndex; omit to reorder within its current group.
+  reorderCategory: (
+    categoryId: string,
+    targetIndex: number,
+    destGroupId?: string,
+  ) => void;
   setAccountNote: (accountId: string, note: string) => void;
   setAccountDebtTerms: (
     accountId: string,
@@ -2544,8 +2579,13 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
   const deleteGroup = useCallback((groupId: string) => {
     dispatch({ type: "delete_group", groupId });
   }, []);
-  const addCategory = useCallback((groupId: string, name: string) => {
-    dispatch({ type: "add_category", groupId, name });
+  const addCategory = useCallback((groupId: string, name: string): string => {
+    // Generate the id in the caller (not the reducer) so the returned
+    // value can be used immediately to wire up a target / pin / etc.
+    // without round-tripping through state.
+    const id = makeId();
+    dispatch({ type: "add_category", groupId, name, id });
+    return id;
   }, []);
   const renameCategory = useCallback((categoryId: string, name: string) => {
     dispatch({ type: "rename_category", categoryId, name });
@@ -2581,8 +2621,13 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "reorder_group", groupId, targetIndex });
   }, []);
   const reorderCategory = useCallback(
-    (categoryId: string, targetIndex: number) => {
-      dispatch({ type: "reorder_category", categoryId, targetIndex });
+    (categoryId: string, targetIndex: number, destGroupId?: string) => {
+      dispatch({
+        type: "reorder_category",
+        categoryId,
+        targetIndex,
+        destGroupId,
+      });
     },
     [],
   );
