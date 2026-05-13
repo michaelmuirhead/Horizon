@@ -2040,9 +2040,30 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
     return () => mql.removeEventListener("change", apply);
   }, [state.settings.theme]);
 
-  // Local notifications on app load — overspent categories and targets with
-  // due dates inside the next 7 days. Dedup via localStorage so the same
-  // alert doesn't fire repeatedly within a 24h window.
+  // Bumps when we should re-evaluate notifications: on tab focus (so
+  // users coming back to a backgrounded PWA after lunch see the
+  // afternoon's alerts), and once an hour while the app is open. The
+  // 24h localStorage dedup keeps the same alert from firing repeatedly
+  // within that window.
+  const [notifyTick, setNotifyTick] = useState(0);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const bump = () => setNotifyTick((n) => n + 1);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") bump();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    const interval = window.setInterval(bump, 60 * 60 * 1000);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  // Local notifications — overspent categories, by-date targets, and
+  // debt payments due in the next 7 days. Dedup via localStorage so the
+  // same alert doesn't fire repeatedly within a 24h window. Re-runs on
+  // hydrate and on every notifyTick bump (tab focus + hourly).
   useEffect(() => {
     if (!state.hydrated) return;
     if (typeof window === "undefined") return;
@@ -2228,9 +2249,10 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
         // ignore
       }
     }
-    // Run once per hydration; dedup is via localStorage.
+    // Run on hydrate, tab-focus, and the hourly tick. The 24h dedup in
+    // localStorage handles the spam risk of re-runs themselves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.hydrated]);
+  }, [state.hydrated, notifyTick]);
 
   // Persist after hydration. Writes go to the active budget's key, not the
   // legacy single-budget key.
