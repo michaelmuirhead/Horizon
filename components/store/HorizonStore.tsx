@@ -1205,23 +1205,11 @@ function coreReducer(state: State, action: Action): State {
         ),
       };
     }
-    case "add_planner_entry": {
-      // Make room at the target order so the new entry slots in cleanly.
-      // Any sibling whose order is >= the new entry's gets bumped down by
-      // one. For appends (caller picked maxOrder + 1) this loop is a
-      // no-op; for mid-list inserts (e.g. same-date grouping) it keeps
-      // ordering dense.
-      const insertOrder = action.entry.order ?? Number.MAX_SAFE_INTEGER;
-      const shifted = state.plannerEntries.map((e) => {
-        if (e.budgetId !== action.entry.budgetId) return e;
-        const o = e.order ?? Number.MAX_SAFE_INTEGER;
-        return o >= insertOrder ? { ...e, order: o + 1 } : e;
-      });
+    case "add_planner_entry":
       return {
         ...state,
-        plannerEntries: [action.entry, ...shifted],
+        plannerEntries: [action.entry, ...state.plannerEntries],
       };
-    }
     case "update_planner_entry":
       return {
         ...state,
@@ -1343,14 +1331,15 @@ function coreReducer(state: State, action: Action): State {
         .filter((e) => e.budgetId === source.budgetId)
         .slice()
         .sort((a, b) => {
-          const ao = a.order ?? Number.MAX_SAFE_INTEGER;
-          const bo = b.order ?? Number.MAX_SAFE_INTEGER;
-          if (ao !== bo) return ao - bo;
-          // Undated entries sort last among same-order rows so they
-          // don't elbow ahead of dated ones during reorder math.
+          // Mirror sortEntriesForBudget so reorder math runs against the
+          // same row positions the user sees: date primary, manual
+          // order as tiebreaker, undated last.
           const ad = a.date ?? "9999-99-99";
           const bd = b.date ?? "9999-99-99";
           if (ad !== bd) return ad < bd ? -1 : 1;
+          const ao = a.order ?? Number.MAX_SAFE_INTEGER;
+          const bo = b.order ?? Number.MAX_SAFE_INTEGER;
+          if (ao !== bo) return ao - bo;
           return a.id < b.id ? -1 : 1;
         });
       const without = budgetEntries.filter((e) => e.id !== action.sourceId);
@@ -2476,16 +2465,12 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
 
   const addPlannerEntry = useCallback(
     (entry: Omit<PlannerEntry, "id" | "order">) => {
-      // Slot the new entry chronologically inside its budget:
-      //   • find the sibling with the latest date <= the new entry's date
-      //     (and among that group, the highest manual order), then insert
-      //     immediately after it;
-      //   • if the new entry pre-dates every dated sibling, insert at the
-      //     top;
-      //   • if the new entry has no date at all, fall back to the legacy
-      //     append-to-end behavior.
-      // The reducer shifts any higher orders to make room. We read
-      // stateRef so the callback identity stays stable.
+      // Display order is date-primary (see sortEntriesForBudget), so the
+      // entry's chronological slot is a function of its date alone. The
+      // `order` field is just a tiebreaker between same-date rows;
+      // giving the new entry maxOrder + 1 lands it at the bottom of its
+      // own date group, which is what users expect when they hit
+      // "Add Income/Expense".
       const siblings = stateRef.plannerEntries.filter(
         (e) => e.budgetId === entry.budgetId,
       );
@@ -2493,38 +2478,9 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
         (m, e) => Math.max(m, e.order ?? -1),
         -1,
       );
-      let insertOrder = maxOrder + 1;
-      if (entry.date) {
-        let bestDate = "";
-        let bestOrder = -1;
-        for (const e of siblings) {
-          if (!e.date || e.date > entry.date) continue;
-          const o = e.order ?? -1;
-          if (
-            bestDate === "" ||
-            e.date > bestDate ||
-            (e.date === bestDate && o > bestOrder)
-          ) {
-            bestDate = e.date;
-            bestOrder = o;
-          }
-        }
-        if (bestDate !== "") {
-          insertOrder = bestOrder + 1;
-        } else if (siblings.length > 0) {
-          // Earlier than every dated sibling — put at the very top. The
-          // reducer's shift covers any colliding orders, including
-          // undated rows that sort to the end.
-          insertOrder = siblings.reduce(
-            (m, e) => Math.min(m, e.order ?? Number.MAX_SAFE_INTEGER),
-            Number.MAX_SAFE_INTEGER,
-          );
-          if (insertOrder === Number.MAX_SAFE_INTEGER) insertOrder = 0;
-        }
-      }
       dispatch({
         type: "add_planner_entry",
-        entry: { ...entry, id: makeId(), order: insertOrder },
+        entry: { ...entry, id: makeId(), order: maxOrder + 1 },
       });
     },
     [],
