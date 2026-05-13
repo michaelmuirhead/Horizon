@@ -6,6 +6,7 @@ import {
   Landmark,
   LineChart,
   PiggyBank,
+  Receipt,
   type LucideIcon,
 } from "lucide-react";
 import type { Account, AccountType } from "@/lib/accounts";
@@ -18,6 +19,7 @@ const iconByType: Record<AccountType, LucideIcon> = {
   investment: LineChart,
   "credit-card": CreditCard,
   loan: Landmark,
+  bill: Receipt,
 };
 
 const iconBgByType: Record<AccountType, string> = {
@@ -27,6 +29,7 @@ const iconBgByType: Record<AccountType, string> = {
   investment: "bg-mint/20 text-mint",
   "credit-card": "bg-rose-900/40 text-rose-300",
   loan: "bg-rose-900/40 text-rose-300",
+  bill: "bg-amber-900/40 text-amber-300",
 };
 
 export default function AccountRow({

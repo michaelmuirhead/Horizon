@@ -2,7 +2,6 @@ import {
   Plus,
   MoreHorizontal,
   PlusCircle,
-  Landmark,
   PiggyBank,
   Scale,
 } from "lucide-react";
@@ -48,7 +47,6 @@ export default function AccountsPage() {
             label="Savings Goals"
             href="/savings"
           />
-          <AccentActionButton Icon={Landmark} label="Manage Bank Connections" />
         </div>
       </div>
     </div>

@@ -1,5 +1,11 @@
 import Link from "next/link";
-import { ChevronRight, CreditCard, Landmark, type LucideIcon } from "lucide-react";
+import {
+  ChevronRight,
+  CreditCard,
+  Landmark,
+  Receipt,
+  type LucideIcon,
+} from "lucide-react";
 import type { AccountType } from "@/lib/accounts";
 import type { DebtRow as DebtRowData } from "@/lib/debts";
 import { daysUntil, nextDueDate, ordinalDay } from "@/lib/debtDueDate";
@@ -12,6 +18,7 @@ const iconByType: Record<AccountType, LucideIcon> = {
   investment: Landmark,
   "credit-card": CreditCard,
   loan: Landmark,
+  bill: Receipt,
 };
 
 const typeLabel: Record<AccountType, string> = {
@@ -21,6 +28,7 @@ const typeLabel: Record<AccountType, string> = {
   investment: "Investment",
   "credit-card": "Credit Card",
   loan: "Loan",
+  bill: "Bill",
 };
 
 // Short, conversational summary of when the next payment is due.

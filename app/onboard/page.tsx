@@ -52,7 +52,9 @@ export default function OnboardingPage() {
     const balance = parseFloat(accountBalance);
     if (trimmed === "" || !Number.isFinite(balance)) return;
     const isLiability =
-      accountType === "credit-card" || accountType === "loan";
+      accountType === "credit-card" ||
+      accountType === "loan" ||
+      accountType === "bill";
     addAccount({
       name: trimmed,
       type: accountType,

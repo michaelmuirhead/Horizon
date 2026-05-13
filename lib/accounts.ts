@@ -4,7 +4,8 @@ export type AccountType =
   | "savings"
   | "investment"
   | "credit-card"
-  | "loan";
+  | "loan"
+  | "bill";
 
 export type InvestmentValuation = {
   id: string;
@@ -85,6 +86,7 @@ export const accountTypeOrder: AccountType[] = [
   "investment",
   "credit-card",
   "loan",
+  "bill",
 ];
 
 export const accountTypeLabels: Record<AccountType, string> = {
@@ -94,6 +96,7 @@ export const accountTypeLabels: Record<AccountType, string> = {
   investment: "Investments",
   "credit-card": "Credit Cards",
   loan: "Loans",
+  bill: "Bills",
 };
 
 export const accountTypeSingularLabels: Record<AccountType, string> = {
@@ -103,6 +106,7 @@ export const accountTypeSingularLabels: Record<AccountType, string> = {
   investment: "Investment",
   "credit-card": "Credit Card",
   loan: "Loan",
+  bill: "Bill",
 };
 
 export const ASSET_ACCOUNT_TYPES: ReadonlySet<AccountType> = new Set([
@@ -111,9 +115,15 @@ export const ASSET_ACCOUNT_TYPES: ReadonlySet<AccountType> = new Set([
   "savings",
   "investment",
 ]);
+// Bills are liability-shaped (balance is what you owe) but unlike
+// credit cards / loans they don't accrue interest — APR is omitted in
+// the form and the Debts UI tolerates a null APR. Including them in
+// this set means they roll up into the debts list, the upcoming-due
+// notifications, and the payoff strategy planner automatically.
 export const LIABILITY_ACCOUNT_TYPES: ReadonlySet<AccountType> = new Set([
   "credit-card",
   "loan",
+  "bill",
 ]);
 
 export const sampleAccounts: Account[] = [
