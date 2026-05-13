@@ -11,14 +11,19 @@ import {
 import { formatCurrency } from "@/lib/format";
 import AccountGroupSection from "./AccountGroupSection";
 import AccountRow from "./AccountRow";
+import SavingsGoalsGroupSection from "./SavingsGoalsGroupSection";
 
 export default function AccountsList() {
-  const { accounts, transactions } = useHorizonStore();
+  const { accounts, transactions, savingsGoals } = useHorizonStore();
   const groups = groupAccounts(accounts);
   const closed = closedAccounts(accounts);
   const [closedExpanded, setClosedExpanded] = useState(false);
 
-  if (groups.length === 0 && closed.length === 0) {
+  if (
+    groups.length === 0 &&
+    closed.length === 0 &&
+    savingsGoals.length === 0
+  ) {
     return (
       <div className="px-1 py-8 text-center text-fg/60">
         No accounts yet. Tap <span className="font-bold text-fg/85">Add Account</span>{" "}
@@ -32,6 +37,8 @@ export default function AccountsList() {
       {groups.map((group) => (
         <AccountGroupSection key={group.type} group={group} />
       ))}
+
+      <SavingsGoalsGroupSection goals={savingsGoals} />
 
       {closed.length > 0 && (
         <section>
