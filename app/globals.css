@@ -83,11 +83,141 @@
   --mint-rgb: 168 255 140;
 }
 
-/* Faint CRT scanlines layered over the page only in the Pip-Boy theme.
- * Pointer-events: none keeps the overlay from intercepting taps, and
- * the 2px stride is gentle enough not to interfere with text reading
- * at standard zoom levels. */
-[data-theme="pipboy"] body::before {
+/* Bloomberg Terminal — amber phosphor on near-black. Sibling of the
+ * Pip-Boy theme; swaps the green for the warmer Quotron / Bloomberg
+ * orange that financial pros stared at for decades. */
+[data-theme="bloomberg"] {
+  color-scheme: dark;
+  --page: #0a0807;
+  --card: #1a140e;
+  --card-elevated: #221b13;
+  --list-row: #0f0c08;
+  --pill: #3a2d18;
+  --pill-text: #ffd07a;
+  --accent: #ff9b1a;
+  --accent-soft: #cc7a14;
+  --mint: #ffc972;
+  --gradient-from: #ff9b1a;
+  --gradient-to: #702d00;
+  --fg-rgb: 255 209 122;
+  --accent-rgb: 255 155 26;
+  --mint-rgb: 255 201 114;
+}
+
+/* Game Boy DMG — the original 4-shade greenish LCD. Foreground is the
+ * darkest of the four greens and the page is the brightest, inverting
+ * the usual dark-on-light expectation while staying inside the GB
+ * Hardware Programming Manual's exact palette. */
+[data-theme="gameboy"] {
+  color-scheme: light;
+  --page: #9bbc0f;
+  --card: #8bac0f;
+  --card-elevated: #a3c40f;
+  --list-row: #94b40f;
+  --pill: #306230;
+  --pill-text: #c4dc4c;
+  --accent: #0f380f;
+  --accent-soft: #306230;
+  --mint: #306230;
+  --gradient-from: #0f380f;
+  --gradient-to: #306230;
+  --fg-rgb: 15 56 15;
+  --accent-rgb: 15 56 15;
+  --mint-rgb: 48 98 48;
+}
+
+/* Apollo Mission Control — late-60s NASA flight control room. Warm
+ * cream paper, olive instruments, the iconic 1968 safety-orange used
+ * on consoles and pressure suits. */
+[data-theme="apollo"] {
+  color-scheme: light;
+  --page: #dbd4be;
+  --card: #ece5cc;
+  --card-elevated: #f4eed4;
+  --list-row: #e2dabd;
+  --pill: #5f5135;
+  --pill-text: #f4eed4;
+  --accent: #d04f1b;
+  --accent-soft: #a83c10;
+  --mint: #587142;
+  --gradient-from: #d04f1b;
+  --gradient-to: #587142;
+  --fg-rgb: 40 32 16;
+  --accent-rgb: 208 79 27;
+  --mint-rgb: 88 113 66;
+}
+
+/* Solarized Dark — Ethan Schoonover's calm cool palette, mapped 1:1
+ * from the canonical hex set. Body text uses base0 so the page feels
+ * slightly muted instead of stark — that's the whole point of
+ * Solarized vs. plain dark themes. */
+[data-theme="solarized"] {
+  color-scheme: dark;
+  --page: #002b36;
+  --card: #073642;
+  --card-elevated: #0d4654;
+  --list-row: #053341;
+  --pill: #586e75;
+  --pill-text: #eee8d5;
+  --accent: #268bd2;
+  --accent-soft: #1e6fa8;
+  --mint: #2aa198;
+  --gradient-from: #268bd2;
+  --gradient-to: #2aa198;
+  --fg-rgb: 147 161 161;
+  --accent-rgb: 38 139 210;
+  --mint-rgb: 42 161 152;
+}
+
+/* Newspaper Ledger — print-publication light theme. Newsprint cream
+ * page, deep-ink body, a single editorial red as the accent. The
+ * forest-green "mint" channel covers the "good"/positive states (a
+ * call to the green ink old WSJ used for stock-up days). */
+[data-theme="newspaper"] {
+  color-scheme: light;
+  --page: #f4ecd8;
+  --card: #fbf6e8;
+  --card-elevated: #ffffff;
+  --list-row: #f8efd8;
+  --pill: #4a4035;
+  --pill-text: #f4ecd8;
+  --accent: #a8201a;
+  --accent-soft: #7a1610;
+  --mint: #1f5c2c;
+  --gradient-from: #a8201a;
+  --gradient-to: #4a4035;
+  --fg-rgb: 28 24 18;
+  --accent-rgb: 168 32 26;
+  --mint-rgb: 31 92 44;
+}
+
+/* Banker's Lamp — wood-paneled study. Parchment cream surfaces, deep
+ * banker's-green accent, brass gold as the secondary tone. Walnut
+ * pill chips tie it to the desk-lamp imagery without being on-the-nose. */
+[data-theme="bankers"] {
+  color-scheme: light;
+  --page: #f1e6c8;
+  --card: #fef9e7;
+  --card-elevated: #fffff4;
+  --list-row: #ede1b9;
+  --pill: #4d3c1e;
+  --pill-text: #fef9e7;
+  --accent: #1f5a3a;
+  --accent-soft: #15402b;
+  --mint: #c79b48;
+  --gradient-from: #1f5a3a;
+  --gradient-to: #c79b48;
+  --fg-rgb: 40 28 14;
+  --accent-rgb: 31 90 58;
+  --mint-rgb: 199 155 72;
+}
+
+/* Faint CRT scanlines layered over the page only in the Pip-Boy and
+ * Bloomberg themes. Pointer-events: none keeps the overlay from
+ * intercepting taps; the 2px stride is gentle enough not to interfere
+ * with text reading at standard zoom levels. */
+[data-theme="pipboy"] body::before,
+[data-theme="bloomberg"] body::before {
   content: "";
   position: fixed;
   inset: 0;
