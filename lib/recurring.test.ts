@@ -105,6 +105,66 @@ describe("isAlreadyScheduled", () => {
     ).toBe(true);
   });
 
+  it("matches a transfer schedule whose toAccount contains the payee and the amount is in band", () => {
+    const schedules: ScheduledTransaction[] = [
+      {
+        id: "s1",
+        kind: "transfer",
+        cadence: "monthly",
+        nextDate: "2026-05-15",
+        fromAccount: "Checking",
+        toAccount: "Chase Mortgage",
+        amount: 1500,
+      },
+    ];
+    expect(
+      isAlreadyScheduled(
+        {
+          direction: "expense",
+          payee: "Chase Mortgage",
+          category: "Housing",
+          account: "Checking",
+          averageAmount: 1500,
+          hits: 6,
+          lastSeen: "2026-04-15",
+          cadence: "monthly",
+          confidence: 0.95,
+        },
+        schedules,
+      ),
+    ).toBe(true);
+  });
+
+  it("does not match a transfer whose name aligns but amount is far off", () => {
+    const schedules: ScheduledTransaction[] = [
+      {
+        id: "s1",
+        kind: "transfer",
+        cadence: "monthly",
+        nextDate: "2026-05-15",
+        fromAccount: "Checking",
+        toAccount: "Chase Visa",
+        amount: 25, // tiny minimum payment
+      },
+    ];
+    expect(
+      isAlreadyScheduled(
+        {
+          direction: "expense",
+          payee: "Chase Visa",
+          category: "Shopping",
+          account: "Chase Visa",
+          averageAmount: 1500, // large recurring purchase to the card
+          hits: 6,
+          lastSeen: "2026-04-15",
+          cadence: "monthly",
+          confidence: 0.9,
+        },
+        schedules,
+      ),
+    ).toBe(false);
+  });
+
   it("does not match different cadences", () => {
     const schedules: ScheduledTransaction[] = [
       {

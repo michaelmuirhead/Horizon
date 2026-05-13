@@ -147,9 +147,23 @@ export function detectRecurring(
 }
 
 // Returns true when the candidate is already covered by an existing
-// scheduled transaction. Match is by payee (case-insensitive) + cadence
-// + matching direction (the sign convention in scheduled differs from
-// transfers, hence the kind check below).
+// scheduled transaction. Two kinds of match:
+//
+//   1. A transaction-kind schedule whose payee matches the candidate's
+//      (case-insensitive, same cadence). This is the standard
+//      "Netflix-style" subscription case.
+//   2. A transfer-kind schedule whose to/from account contains the
+//      candidate's payee AND whose amount is within 5% of the
+//      candidate's average. Catches debt-payment transfers ("Pay
+//      Mortgage from Checking") that already cover what the user is
+//      seeing as recurring outflows.
+//
+// The amount tolerance on transfers is deliberately tight — name
+// containment alone false-positives when a user has both subscription
+// charges to "Chase" and a separate transfer to "Chase Visa". Pairing
+// it with amount makes the match meaningful.
+const TRANSFER_AMOUNT_TOLERANCE = 0.05;
+
 export function isAlreadyScheduled(
   candidate: RecurringCandidate,
   schedules: ScheduledTransaction[],
@@ -157,7 +171,21 @@ export function isAlreadyScheduled(
   const needle = candidate.payee.trim().toLowerCase();
   for (const s of schedules) {
     if (s.cadence !== candidate.cadence) continue;
-    if (isTransferSchedule(s)) continue;
+    if (isTransferSchedule(s)) {
+      const to = s.toAccount.trim().toLowerCase();
+      const from = s.fromAccount.trim().toLowerCase();
+      const nameMatch =
+        to === needle ||
+        from === needle ||
+        to.includes(needle) ||
+        from.includes(needle);
+      if (!nameMatch) continue;
+      const amtDiff = Math.abs(s.amount - candidate.averageAmount);
+      if (amtDiff > candidate.averageAmount * TRANSFER_AMOUNT_TOLERANCE) {
+        continue;
+      }
+      return true;
+    }
     if (s.payee.trim().toLowerCase() !== needle) continue;
     return true;
   }
