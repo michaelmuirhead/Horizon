@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import { Camera, Plus, Trash2, X } from "lucide-react";
+import { Camera, FolderOpen, ImageIcon, Plus, Trash2, X } from "lucide-react";
 import FormGroup, { FormRow } from "@/components/forms/FormGroup";
 import TextInput from "@/components/forms/TextInput";
 import Select from "@/components/forms/Select";
@@ -112,18 +112,31 @@ export default function TransactionForm({
   const [receiptDataUrl, setReceiptDataUrl] = useState<string | undefined>(
     initial?.receiptDataUrl,
   );
-  const receiptInputRef = useRef<HTMLInputElement>(null);
+  // Three pick paths: camera (capture="environment"), photo library
+  // (accept="image/*"), and Files (no accept — iOS opens the Files
+  // app directly, skipping the photo action sheet). Browsers don't
+  // let one <input> toggle capture/accept dynamically, so each
+  // needs its own ref / element. The Files path can yield non-image
+  // files (PDFs, docs); resizeImageFile rejects those and the
+  // existing catch leaves the previous receipt untouched.
+  const receiptCameraRef = useRef<HTMLInputElement>(null);
+  const receiptLibraryRef = useRef<HTMLInputElement>(null);
+  const receiptFilesRef = useRef<HTMLInputElement>(null);
 
-  async function handleReceiptPicked(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const dataUrl = await resizeImageFile(file);
-      setReceiptDataUrl(dataUrl);
-    } catch {
-      // Image too large or unreadable — leave the existing receipt alone.
-    }
-    if (receiptInputRef.current) receiptInputRef.current.value = "";
+  function handleReceiptPickedFrom(
+    ref: React.RefObject<HTMLInputElement | null>,
+  ) {
+    return async (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const dataUrl = await resizeImageFile(file);
+        setReceiptDataUrl(dataUrl);
+      } catch {
+        // Image too large or unreadable — leave the existing receipt alone.
+      }
+      if (ref.current) ref.current.value = "";
+    };
   }
   // Track whether the user has explicitly picked a category. Auto-suggest from
   // payee history when they haven't, but never overwrite a deliberate choice.
@@ -416,19 +429,48 @@ export default function TransactionForm({
               </button>
             )}
             <label
-              htmlFor="receipt-input"
+              htmlFor="receipt-input-camera"
               className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-card-elevated px-3 py-1.5 text-xs font-bold text-fg/85"
             >
               <Camera size={14} strokeWidth={2.4} />
-              {receiptDataUrl ? "Replace" : "Add photo"}
+              Camera
             </label>
             <input
-              id="receipt-input"
-              ref={receiptInputRef}
+              id="receipt-input-camera"
+              ref={receiptCameraRef}
               type="file"
               accept="image/*"
               capture="environment"
-              onChange={handleReceiptPicked}
+              onChange={handleReceiptPickedFrom(receiptCameraRef)}
+              className="sr-only"
+            />
+            <label
+              htmlFor="receipt-input-library"
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-card-elevated px-3 py-1.5 text-xs font-bold text-fg/85"
+            >
+              <ImageIcon size={14} strokeWidth={2.4} />
+              Library
+            </label>
+            <input
+              id="receipt-input-library"
+              ref={receiptLibraryRef}
+              type="file"
+              accept="image/*"
+              onChange={handleReceiptPickedFrom(receiptLibraryRef)}
+              className="sr-only"
+            />
+            <label
+              htmlFor="receipt-input-files"
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-card-elevated px-3 py-1.5 text-xs font-bold text-fg/85"
+            >
+              <FolderOpen size={14} strokeWidth={2.4} />
+              Files
+            </label>
+            <input
+              id="receipt-input-files"
+              ref={receiptFilesRef}
+              type="file"
+              onChange={handleReceiptPickedFrom(receiptFilesRef)}
               className="sr-only"
             />
           </div>

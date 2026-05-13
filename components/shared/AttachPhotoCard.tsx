@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, type ChangeEvent } from "react";
-import { Camera, X } from "lucide-react";
+import { Camera, FolderOpen, ImageIcon, X } from "lucide-react";
 import { resizeImageFile } from "@/lib/imageResize";
 
 type Props = {
@@ -24,27 +24,46 @@ type Props = {
 // being saved for). Mirrors the receipt UX on TransactionForm:
 // downscale client-side via resizeImageFile, store as a data URL,
 // show inline with a remove button.
+//
+// Three pick paths:
+//   • Camera   — capture="environment", iOS opens the rear camera.
+//   • Library  — accept="image/*", iOS opens the photo picker.
+//   • Files    — no accept attribute, iOS skips the photo action
+//                sheet and opens the Files app directly (iCloud
+//                Drive, On My iPhone, third-party providers).
+//
+// Browsers don't let one <input> toggle capture / accept
+// dynamically — each path needs its own element. The Files input
+// can yield a non-image (PDF, doc); resizeImageFile rejects that
+// and the existing catch leaves the current photo untouched.
 export default function AttachPhotoCard({
   value,
   onChange,
   label,
   scopeId,
 }: Props) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const libraryInputRef = useRef<HTMLInputElement>(null);
+  const filesInputRef = useRef<HTMLInputElement>(null);
 
-  async function handlePicked(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const dataUrl = await resizeImageFile(file);
-      onChange(dataUrl);
-    } catch {
-      // Image too large or unreadable — leave the existing photo alone.
-    }
-    if (inputRef.current) inputRef.current.value = "";
+  function handlePickedFrom(ref: React.RefObject<HTMLInputElement | null>) {
+    return async (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const dataUrl = await resizeImageFile(file);
+        onChange(dataUrl);
+      } catch {
+        // Image too large / unreadable (or a non-image picked via
+        // Files) — leave the existing photo alone.
+      }
+      if (ref.current) ref.current.value = "";
+    };
   }
 
-  const inputId = `photo-${scopeId}`;
+  const cameraInputId = `photo-${scopeId}-camera`;
+  const libraryInputId = `photo-${scopeId}-library`;
+  const filesInputId = `photo-${scopeId}-files`;
 
   return (
     <section className="rounded-2xl bg-card p-5">
@@ -64,22 +83,48 @@ export default function AttachPhotoCard({
             </button>
           )}
           <label
-            htmlFor={inputId}
+            htmlFor={cameraInputId}
             className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-card-elevated px-3 py-1.5 text-xs font-bold text-fg/85"
           >
             <Camera size={14} strokeWidth={2.4} />
-            {value ? "Replace" : "Add photo"}
+            Camera
           </label>
-          {/* `capture="environment"` cues iOS to default the camera
-              roll picker to the rear camera. The user can still pick
-              an existing image from their library. */}
           <input
-            id={inputId}
-            ref={inputRef}
+            id={cameraInputId}
+            ref={cameraInputRef}
             type="file"
             accept="image/*"
             capture="environment"
-            onChange={handlePicked}
+            onChange={handlePickedFrom(cameraInputRef)}
+            className="sr-only"
+          />
+          <label
+            htmlFor={libraryInputId}
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-card-elevated px-3 py-1.5 text-xs font-bold text-fg/85"
+          >
+            <ImageIcon size={14} strokeWidth={2.4} />
+            Library
+          </label>
+          <input
+            id={libraryInputId}
+            ref={libraryInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handlePickedFrom(libraryInputRef)}
+            className="sr-only"
+          />
+          <label
+            htmlFor={filesInputId}
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-card-elevated px-3 py-1.5 text-xs font-bold text-fg/85"
+          >
+            <FolderOpen size={14} strokeWidth={2.4} />
+            Files
+          </label>
+          <input
+            id={filesInputId}
+            ref={filesInputRef}
+            type="file"
+            onChange={handlePickedFrom(filesInputRef)}
             className="sr-only"
           />
         </div>
