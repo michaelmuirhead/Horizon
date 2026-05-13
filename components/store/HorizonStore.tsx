@@ -344,6 +344,7 @@ type Action =
       minimumPayment: number | null;
       paymentDueDayOfMonth: number | null;
       defaultFundingAccountId: string | null;
+      accountNumber: string | null;
     }
   | { type: "add_planner_entry"; entry: PlannerEntry }
   | { type: "update_planner_entry"; entry: PlannerEntry }
@@ -1211,17 +1212,22 @@ function coreReducer(state: State, action: Action): State {
         ...state,
         accounts: state.accounts.map((a) => {
           if (a.id !== action.accountId) return a;
+          // Strip all five "debt terms" fields first so passing null
+          // for any of them clears it cleanly (rather than leaving a
+          // stale value in place).
           const {
             apr: _apr,
             minimumPayment: _min,
             paymentDueDayOfMonth: _due,
             defaultFundingAccountId: _fund,
+            accountNumber: _num,
             ...rest
           } = a;
           void _apr;
           void _min;
           void _due;
           void _fund;
+          void _num;
           const next: Account = { ...rest };
           if (action.apr !== null && Number.isFinite(action.apr)) {
             next.apr = action.apr;
@@ -1245,6 +1251,12 @@ function coreReducer(state: State, action: Action): State {
             action.defaultFundingAccountId.trim() !== ""
           ) {
             next.defaultFundingAccountId = action.defaultFundingAccountId;
+          }
+          if (
+            action.accountNumber !== null &&
+            action.accountNumber.trim() !== ""
+          ) {
+            next.accountNumber = action.accountNumber.trim();
           }
           return next;
         }),
@@ -1811,6 +1823,7 @@ type Ctx = {
       minimumPayment: number | null;
       paymentDueDayOfMonth: number | null;
       defaultFundingAccountId: string | null;
+      accountNumber: string | null;
     },
   ) => void;
   addPlannerEntry: (entry: Omit<PlannerEntry, "id" | "order">) => void;
@@ -2719,6 +2732,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
         minimumPayment: number | null;
         paymentDueDayOfMonth: number | null;
         defaultFundingAccountId: string | null;
+        accountNumber: string | null;
       },
     ) => {
       dispatch({
@@ -2728,6 +2742,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
         minimumPayment: terms.minimumPayment,
         paymentDueDayOfMonth: terms.paymentDueDayOfMonth,
         defaultFundingAccountId: terms.defaultFundingAccountId,
+        accountNumber: terms.accountNumber,
       });
     },
     [],

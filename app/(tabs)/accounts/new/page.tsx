@@ -29,6 +29,7 @@ export default function NewAccountPage() {
   const [loanTerm, setLoanTerm] = useState("");
   const [creditApr, setCreditApr] = useState("");
   const [minimumPayment, setMinimumPayment] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
 
   const valid = name.trim() !== "" && balance !== "" && !isNaN(Number(balance));
   const isLiability = LIABILITIES.includes(type);
@@ -44,6 +45,7 @@ export default function NewAccountPage() {
     const term = parseInt(loanTerm, 10);
     const cardApr = parseFloat(creditApr);
     const minPay = parseFloat(minimumPayment);
+    const trimmedAccountNumber = accountNumber.trim();
     addAccount({
       name: name.trim(),
       type,
@@ -59,6 +61,9 @@ export default function NewAccountPage() {
         : {}),
       ...(isLiability && Number.isFinite(minPay) && minPay > 0
         ? { minimumPayment: minPay }
+        : {}),
+      ...(isLiability && trimmedAccountNumber !== ""
+        ? { accountNumber: trimmedAccountNumber }
         : {}),
     });
     router.push("/accounts");
@@ -179,6 +184,20 @@ export default function NewAccountPage() {
                   className="max-w-[140px]"
                 />
               </span>
+            </FormRow>
+          )}
+
+          {isLiability && (
+            <FormRow label="Account #" htmlFor="account-number">
+              <TextInput
+                id="account-number"
+                type="text"
+                inputMode="text"
+                placeholder="optional"
+                autoComplete="off"
+                value={accountNumber}
+                onChange={(e) => setAccountNumber(e.target.value)}
+              />
             </FormRow>
           )}
 
