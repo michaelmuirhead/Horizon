@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronRight, CreditCard, Landmark, type LucideIcon } from "lucide-react";
 import type { AccountType } from "@/lib/accounts";
 import type { DebtRow as DebtRowData } from "@/lib/debts";
+import { daysUntil, nextDueDate, ordinalDay } from "@/lib/debtDueDate";
 import { formatCurrency } from "@/lib/format";
 
 const iconByType: Record<AccountType, LucideIcon> = {
@@ -22,11 +23,36 @@ const typeLabel: Record<AccountType, string> = {
   loan: "Loan",
 };
 
+// Short, conversational summary of when the next payment is due.
+// `daysAway === 0` is "Today"; negative is overdue. Used as the small
+// caption on the debt row so the user spots an imminent due at a
+// glance without leaving the list.
+function dueLabel(day: number): string {
+  const iso = nextDueDate(day);
+  if (!iso) return "";
+  const away = daysUntil(iso);
+  if (away === 0) return `Due today (${ordinalDay(day)})`;
+  if (away === 1) return `Due tomorrow (${ordinalDay(day)})`;
+  if (away > 0 && away <= 7) return `Due in ${away} days (${ordinalDay(day)})`;
+  if (away < 0) return `Overdue by ${-away}d (${ordinalDay(day)})`;
+  return `Due ${ordinalDay(day)}`;
+}
+
+function dueTone(day: number): string {
+  const iso = nextDueDate(day);
+  if (!iso) return "text-fg/55";
+  const away = daysUntil(iso);
+  if (away < 0) return "text-rose-300";
+  if (away <= 3) return "text-amber-300";
+  return "text-fg/55";
+}
+
 export default function DebtRow({ row }: { row: DebtRowData }) {
   const Icon = iconByType[row.account.type];
   const aprText = row.apr === null ? "—" : `${row.apr.toFixed(2)}%`;
   const minText =
     row.minimumPayment === null ? "—" : formatCurrency(row.minimumPayment);
+  const dueDay = row.account.paymentDueDayOfMonth;
 
   return (
     <Link
@@ -77,6 +103,13 @@ export default function DebtRow({ row }: { row: DebtRowData }) {
           </dd>
         </div>
       </dl>
+      {typeof dueDay === "number" && (
+        <div className="mt-2 border-t border-fg/5 pt-2 text-xs">
+          <span className={`font-semibold ${dueTone(dueDay)}`}>
+            {dueLabel(dueDay)}
+          </span>
+        </div>
+      )}
     </Link>
   );
 }

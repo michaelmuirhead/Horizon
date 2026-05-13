@@ -4,6 +4,7 @@ import PinnedSection from "@/components/home/PinnedSection";
 import GoalSection from "@/components/home/GoalSection";
 import SummarySection from "@/components/home/SummarySection";
 import BillsCalendarSection from "@/components/home/BillsCalendarSection";
+import UpcomingDebtsSection from "@/components/home/UpcomingDebtsSection";
 import FutureMonthsSection from "@/components/home/FutureMonthsSection";
 import WishlistSection from "@/components/home/WishlistSection";
 
@@ -34,6 +35,7 @@ export default function HomePage() {
         <PinnedSection />
         <GoalSection />
         <WishlistSection />
+        <UpcomingDebtsSection />
         <BillsCalendarSection />
         <SummarySection month={currentMonth} />
         <FutureMonthsSection />

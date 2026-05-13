@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      # Each step is its own job step so a failure tells you exactly which
+      # check broke. `next build` is what would have caught the duplicate
+      # `[id]` / `[folderId]` route — keep it in CI even though it's the
+      # slowest step.
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+        env:
+          # Build needs *some* value here to satisfy lib/firebase.ts'
+          # env reads; cloud sync stays disabled at runtime because the
+          # other NEXT_PUBLIC_FIREBASE_* vars are absent.
+          NEXT_PUBLIC_FIREBASE_API_KEY: ci-placeholder

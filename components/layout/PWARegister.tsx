@@ -1,27 +1,49 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export default function PWARegister() {
+  // Set when the SW has an update sitting in `waiting`. Surfacing it
+  // lets the user choose when to reload instead of being yanked out of
+  // whatever they're typing.
+  const [waitingWorker, setWaitingWorker] =
+    useState<ServiceWorker | null>(null);
+  const [reloading, setReloading] = useState(false);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!("serviceWorker" in navigator)) return;
     if (process.env.NODE_ENV !== "production") return;
 
-    // Whether the page already had a controlling SW at register time.
-    // We use this to distinguish a real update (controllerchange after we
-    // had a controller) from the first install (controllerchange because
-    // clients.claim() just took control mid-load) — only the first case
-    // should trigger a reload.
-    const hadController = !!navigator.serviceWorker.controller;
-    let reloading = false;
     let intervalId: number | undefined;
+    let registration: ServiceWorkerRegistration | undefined;
 
+    // Reload once the new SW takes control. We only ever trigger this
+    // path after the user opts in via the banner, so there's no risk of
+    // clobbering an in-progress edit.
     function onControllerChange() {
-      if (!hadController) return;
       if (reloading) return;
-      reloading = true;
+      setReloading(true);
       window.location.reload();
+    }
+
+    function trackWaiting(reg: ServiceWorkerRegistration) {
+      if (reg.waiting && navigator.serviceWorker.controller) {
+        setWaitingWorker(reg.waiting);
+      }
+    }
+
+    function watchInstalling(reg: ServiceWorkerRegistration) {
+      const newWorker = reg.installing;
+      if (!newWorker) return;
+      newWorker.addEventListener("statechange", () => {
+        if (
+          newWorker.state === "installed" &&
+          navigator.serviceWorker.controller
+        ) {
+          setWaitingWorker(newWorker);
+        }
+      });
     }
 
     function register() {
@@ -31,12 +53,18 @@ export default function PWARegister() {
         // from cache for up to 24h, which is the main reason a "fresh"
         // install seemed required to pick up new code.
         .register("/sw.js", { updateViaCache: "none" })
-        .then((registration) => {
+        .then((reg) => {
+          registration = reg;
+          // If we registered AFTER the new SW already finished installing
+          // (e.g. tab was backgrounded), surface it immediately.
+          trackWaiting(reg);
+          // Otherwise watch for the next install to finish.
+          reg.addEventListener("updatefound", () => watchInstalling(reg));
           // Re-check for an updated SW when the user comes back to the tab
           // and once an hour while it's open. Browsers do this on their own
           // schedule but the cadence is generous; nudging it is cheap.
           const checkForUpdate = () => {
-            registration.update().catch(() => {});
+            reg.update().catch(() => {});
           };
           window.addEventListener("focus", checkForUpdate);
           intervalId = window.setInterval(checkForUpdate, 60 * 60 * 1000);
@@ -64,7 +92,26 @@ export default function PWARegister() {
       );
       if (intervalId !== undefined) window.clearInterval(intervalId);
     };
-  }, []);
+  }, [reloading]);
 
-  return null;
+  if (!waitingWorker || reloading) return null;
+
+  return (
+    <div
+      role="status"
+      className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+96px)] z-40 mx-auto flex max-w-md items-center justify-between gap-3 rounded-2xl border border-accent/40 bg-accent/15 px-4 py-3 text-sm font-bold text-accent backdrop-blur md:max-w-md"
+      style={{ width: "calc(100% - 2rem)" }}
+    >
+      <span>A new version is available.</span>
+      <button
+        type="button"
+        onClick={() => {
+          waitingWorker.postMessage({ type: "SKIP_WAITING" });
+        }}
+        className="rounded-full bg-accent px-3 py-1.5 text-xs font-bold text-page"
+      >
+        Reload
+      </button>
+    </div>
+  );
 }

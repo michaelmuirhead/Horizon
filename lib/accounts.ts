@@ -40,6 +40,16 @@ export type Account = {
   // surfaces missing values so the user can fill them in.
   apr?: number;
   minimumPayment?: number;
+  // Day of the month the next payment is due (1..31). Recurring — we
+  // derive the next-due calendar date by combining this with today.
+  // Values that exceed the month's last day clamp to the last day
+  // (e.g. day 31 on April resolves to April 30) so users can say
+  // "always due on the 31st" without losing months.
+  paymentDueDayOfMonth?: number;
+  // Stable id of the asset account that should fund the scheduled
+  // payment for this debt. We resolve from id (not name) so renaming
+  // the source account doesn't silently break the schedule.
+  defaultFundingAccountId?: string;
   // Investment account history of self-reported values. The most recent
   // entry's value is what `liveAccountBalance` returns when populated.
   // Net contributions (sum of transactions on this account) are tracked

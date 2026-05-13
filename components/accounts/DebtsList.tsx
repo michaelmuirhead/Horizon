@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { PlusCircle } from "lucide-react";
 import { useHorizonStore } from "@/components/store/HorizonStore";
-import { listDebts, summarizeDebts } from "@/lib/debts";
+import { isDebtAccount, listDebts, summarizeDebts } from "@/lib/debts";
+import { upcomingDebtDues } from "@/lib/debtDueDate";
 import { formatCurrency } from "@/lib/format";
 import DebtRow from "./DebtRow";
+import UpcomingDebtsSection from "@/components/home/UpcomingDebtsSection";
 
 export default function DebtsList() {
   const { accounts, transactions } = useHorizonStore();
@@ -38,8 +40,15 @@ export default function DebtsList() {
       ? "—"
       : `${summary.weightedApr.toFixed(2)}%`;
 
+  // Surface the upcoming-due card above the totals when relevant —
+  // overdue + same-week dues are the most actionable signal on this
+  // screen and shouldn't require scrolling past the summary.
+  const debtAccounts = accounts.filter((a) => isDebtAccount(a) && !a.closed);
+  const hasUpcoming = upcomingDebtDues(debtAccounts, 7).length > 0;
+
   return (
     <div className="space-y-4">
+      {hasUpcoming && <UpcomingDebtsSection />}
       <section className="rounded-2xl bg-card p-5">
         <p className="text-xs font-medium uppercase tracking-wide text-fg/60">
           Total Owed

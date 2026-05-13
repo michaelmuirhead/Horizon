@@ -307,6 +307,8 @@ type Action =
       accountId: string;
       apr: number | null;
       minimumPayment: number | null;
+      paymentDueDayOfMonth: number | null;
+      defaultFundingAccountId: string | null;
     }
   | { type: "add_planner_entry"; entry: PlannerEntry }
   | { type: "update_planner_entry"; entry: PlannerEntry }
@@ -452,13 +454,26 @@ function migratePlannerEntries(
   });
 }
 
-// Wraps the core reducer to stamp `lastModifiedAt` on any state-changing
-// mutation. hydrate / restore carry their own stamp in the action payload —
-// passing them through keeps cloud + local clocks aligned across reloads.
+// Action types whose effects should NOT bump lastModifiedAt: hydrate /
+// restore carry their own stamp in the payload, and the two automatic
+// catch-up actions fire on every app open (potentially on multiple
+// devices the same morning). Bumping on those would have two devices
+// race to push identical post-catch-up state on every cold start.
+const NON_USER_ACTION_TYPES = new Set<Action["type"]>([
+  "hydrate",
+  "restore",
+  "post_due_scheduled",
+  "auto_fund_recurring_targets",
+]);
+
+// Wraps the core reducer to stamp `lastModifiedAt` on any user-driven
+// state change. Pass-through cases (see NON_USER_ACTION_TYPES) keep the
+// previous stamp so background catch-up work doesn't trigger spurious
+// cloud pushes.
 function reducer(state: State, action: Action): State {
   const next = coreReducer(state, action);
   if (next === state) return state;
-  if (action.type === "hydrate" || action.type === "restore") return next;
+  if (NON_USER_ACTION_TYPES.has(action.type)) return next;
   return { ...next, lastModifiedAt: Date.now() };
 }
 
@@ -1129,9 +1144,17 @@ function coreReducer(state: State, action: Action): State {
         ...state,
         accounts: state.accounts.map((a) => {
           if (a.id !== action.accountId) return a;
-          const { apr: _apr, minimumPayment: _min, ...rest } = a;
+          const {
+            apr: _apr,
+            minimumPayment: _min,
+            paymentDueDayOfMonth: _due,
+            defaultFundingAccountId: _fund,
+            ...rest
+          } = a;
           void _apr;
           void _min;
+          void _due;
+          void _fund;
           const next: Account = { ...rest };
           if (action.apr !== null && Number.isFinite(action.apr)) {
             next.apr = action.apr;
@@ -1141,6 +1164,20 @@ function coreReducer(state: State, action: Action): State {
             Number.isFinite(action.minimumPayment)
           ) {
             next.minimumPayment = action.minimumPayment;
+          }
+          if (
+            action.paymentDueDayOfMonth !== null &&
+            Number.isFinite(action.paymentDueDayOfMonth) &&
+            action.paymentDueDayOfMonth >= 1 &&
+            action.paymentDueDayOfMonth <= 31
+          ) {
+            next.paymentDueDayOfMonth = Math.floor(action.paymentDueDayOfMonth);
+          }
+          if (
+            action.defaultFundingAccountId !== null &&
+            action.defaultFundingAccountId.trim() !== ""
+          ) {
+            next.defaultFundingAccountId = action.defaultFundingAccountId;
           }
           return next;
         }),
@@ -1327,7 +1364,17 @@ function coreReducer(state: State, action: Action): State {
       if (!source || !target || source.budgetId !== target.budgetId) {
         return state;
       }
+      // Display sort is date-primary, so a drag that crosses date
+      // groups only makes sense if we also retag the source to the
+      // target's date — otherwise the drop snaps back on next render.
+      // We treat the gesture as "place this entry next to that
+      // neighbor", date included.
+      const updatedSource =
+        source.date === target.date
+          ? source
+          : { ...source, date: target.date };
       const budgetEntries = state.plannerEntries
+        .map((e) => (e.id === source.id ? updatedSource : e))
         .filter((e) => e.budgetId === source.budgetId)
         .slice()
         .sort((a, b) => {
@@ -1347,7 +1394,7 @@ function coreReducer(state: State, action: Action): State {
       const insertAt = targetIdx + (action.position === "after" ? 1 : 0);
       const reordered = [
         ...without.slice(0, insertAt),
-        source,
+        updatedSource,
         ...without.slice(insertAt),
       ];
       const reorderedById = new Map<string, number>();
@@ -1357,7 +1404,11 @@ function coreReducer(state: State, action: Action): State {
         plannerEntries: state.plannerEntries.map((e) => {
           if (e.budgetId !== source.budgetId) return e;
           const i = reorderedById.get(e.id);
-          return i === undefined ? e : { ...e, order: i };
+          if (i === undefined) return e;
+          // Apply both the new order and (for the source row only) the
+          // retagged date.
+          const base = e.id === source.id ? updatedSource : e;
+          return { ...base, order: i };
         }),
       };
     }
@@ -1645,7 +1696,12 @@ type Ctx = {
   setAccountNote: (accountId: string, note: string) => void;
   setAccountDebtTerms: (
     accountId: string,
-    terms: { apr: number | null; minimumPayment: number | null },
+    terms: {
+      apr: number | null;
+      minimumPayment: number | null;
+      paymentDueDayOfMonth: number | null;
+      defaultFundingAccountId: string | null;
+    },
   ) => void;
   addPlannerEntry: (entry: Omit<PlannerEntry, "id" | "order">) => void;
   updatePlannerEntry: (entry: PlannerEntry) => void;
@@ -2451,13 +2507,20 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
   const setAccountDebtTerms = useCallback(
     (
       accountId: string,
-      terms: { apr: number | null; minimumPayment: number | null },
+      terms: {
+        apr: number | null;
+        minimumPayment: number | null;
+        paymentDueDayOfMonth: number | null;
+        defaultFundingAccountId: string | null;
+      },
     ) => {
       dispatch({
         type: "set_account_debt_terms",
         accountId,
         apr: terms.apr,
         minimumPayment: terms.minimumPayment,
+        paymentDueDayOfMonth: terms.paymentDueDayOfMonth,
+        defaultFundingAccountId: terms.defaultFundingAccountId,
       });
     },
     [],
