@@ -1,8 +1,14 @@
 "use client";
 
-import { useRef, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { Camera, FolderOpen, ImageIcon, X } from "lucide-react";
 import { resizeImageFile } from "@/lib/imageResize";
+import {
+  PDF_SIZE_LIMIT_LABEL,
+  isPdfDataUrl,
+  isPdfTooLargeError,
+  readPdfAsDataUrl,
+} from "@/lib/attachmentRead";
 
 type Props = {
   // Current photo as a data URL, or undefined when none is attached.
@@ -45,17 +51,35 @@ export default function AttachPhotoCard({
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const libraryInputRef = useRef<HTMLInputElement>(null);
   const filesInputRef = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Auto-clear the error pill after a beat so a stale "too large"
+  // message doesn't linger after the user picks a valid file.
+  useEffect(() => {
+    if (!error) return;
+    const t = window.setTimeout(() => setError(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [error]);
 
   function handlePickedFrom(ref: React.RefObject<HTMLInputElement | null>) {
     return async (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
+      setError(null);
       try {
-        const dataUrl = await resizeImageFile(file);
-        onChange(dataUrl);
-      } catch {
-        // Image too large / unreadable (or a non-image picked via
-        // Files) — leave the existing photo alone.
+        if (file.type === "application/pdf") {
+          const dataUrl = await readPdfAsDataUrl(file);
+          onChange(dataUrl);
+        } else {
+          const dataUrl = await resizeImageFile(file);
+          onChange(dataUrl);
+        }
+      } catch (err) {
+        if (isPdfTooLargeError(err)) {
+          setError(`PDF is too large — keep it under ${PDF_SIZE_LIMIT_LABEL}.`);
+        }
+        // Other errors (non-image picked via Files, corrupt file)
+        // silently leave the existing photo alone.
       }
       if (ref.current) ref.current.value = "";
     };
@@ -129,14 +153,35 @@ export default function AttachPhotoCard({
           />
         </div>
       </div>
+      {error && (
+        <p className="mt-2 text-xs font-semibold text-rose-300">{error}</p>
+      )}
       {value && (
         <div className="mt-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={value}
-            alt={label}
-            className="block max-h-72 w-full rounded-xl object-contain bg-card-elevated"
-          />
+          {isPdfDataUrl(value) ? (
+            <div className="overflow-hidden rounded-xl bg-card-elevated">
+              <iframe
+                src={value}
+                title={label}
+                className="block h-72 w-full"
+              />
+              <a
+                href={value}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block px-3 py-2 text-center text-xs font-bold text-accent"
+              >
+                Open PDF in new tab
+              </a>
+            </div>
+          ) : (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={value}
+              alt={label}
+              className="block max-h-72 w-full rounded-xl object-contain bg-card-elevated"
+            />
+          )}
         </div>
       )}
     </section>
