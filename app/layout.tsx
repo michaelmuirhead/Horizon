@@ -16,8 +16,19 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
   },
   icons: {
-    icon: "/icon.svg",
-    apple: "/icon.svg",
+    // Order matters: browsers pick the first supported entry. PNGs first
+    // because iOS Safari and older Android Chrome ignore SVG home-screen
+    // icons and fall back to a screenshot of the page if they can't find
+    // a raster icon. SVG stays last as a higher-DPI fallback for browsers
+    // that prefer it (modern desktop Chrome, etc.).
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
   },
 };
 

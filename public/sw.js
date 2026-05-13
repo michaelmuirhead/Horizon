@@ -2,7 +2,7 @@
 // /offline fallback for pages and stale-while-revalidate for same-origin
 // static assets. Bump CACHE when the shell list changes so old caches roll.
 
-const CACHE = "horizon-shell-v3";
+const CACHE = "horizon-shell-v4";
 const OFFLINE_URL = "/offline";
 const SHELL_URLS = [
   "/",
