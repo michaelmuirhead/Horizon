@@ -1,11 +1,12 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useState } from "react";
-import { CalendarClock } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { CalendarClock, CheckCircle2, X } from "lucide-react";
 import type { Account } from "@/lib/accounts";
+import { ASSET_ACCOUNT_TYPES } from "@/lib/accounts";
 import { useHorizonStore } from "@/components/store/HorizonStore";
 import { nextDueDate, ordinalDay } from "@/lib/debtDueDate";
+import { isTransferSchedule } from "@/lib/scheduled";
 
 function toInputValue(n: number | undefined): string {
   return typeof n === "number" ? String(n) : "";
@@ -18,7 +19,6 @@ function parseOptionalNumber(raw: string): number | null {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
-// Clamps the day to 1..31; anything else (including blanks) is "unset".
 function parseDueDay(raw: string): number | null {
   const trimmed = raw.trim();
   if (trimmed === "") return null;
@@ -27,8 +27,48 @@ function parseDueDay(raw: string): number | null {
   return parsed;
 }
 
+// Type-preference for the auto-picked funding account when the user
+// hasn't chosen one. Checking is far and away the most common funding
+// source for debt payments, then savings, then cash, then anything else
+// asset-shaped — investments fall to the end since automating a draw
+// from a brokerage is a foot-gun.
+const FUNDING_TYPE_PREFERENCE = ["checking", "savings", "cash", "investment"];
+
+function pickDefaultFundingAccount(
+  accounts: Account[],
+  savedId: string | undefined,
+): Account | null {
+  const assetAccounts = accounts.filter(
+    (a) => ASSET_ACCOUNT_TYPES.has(a.type) && !a.closed,
+  );
+  if (savedId) {
+    const saved = assetAccounts.find((a) => a.id === savedId);
+    if (saved) return saved;
+  }
+  for (const type of FUNDING_TYPE_PREFERENCE) {
+    const match = assetAccounts.find((a) => a.type === type);
+    if (match) return match;
+  }
+  return assetAccounts[0] ?? null;
+}
+
+function shortDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const date = new Date(y, (m ?? 1) - 1, d ?? 1);
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
 export default function DebtTermsCard({ account }: { account: Account }) {
-  const { setAccountDebtTerms } = useHorizonStore();
+  const {
+    accounts,
+    scheduledTransactions,
+    setAccountDebtTerms,
+    addScheduled,
+    deleteScheduled,
+  } = useHorizonStore();
 
   const initialApr =
     account.type === "loan"
@@ -41,29 +81,40 @@ export default function DebtTermsCard({ account }: { account: Account }) {
   const [dueDay, setDueDay] = useState(
     toInputValue(account.paymentDueDayOfMonth),
   );
+  const fundingDefault = useMemo(
+    () => pickDefaultFundingAccount(accounts, account.defaultFundingAccountId),
+    [accounts, account.defaultFundingAccountId],
+  );
+  const [fundingId, setFundingId] = useState<string>(fundingDefault?.id ?? "");
   const [savedHint, setSavedHint] = useState(false);
+  const [scheduledHint, setScheduledHint] = useState(false);
 
   // If the account changes (e.g. switching detail pages), refresh inputs.
   useEffect(() => {
     setApr(initialApr);
     setMinPayment(toInputValue(account.minimumPayment));
     setDueDay(toInputValue(account.paymentDueDayOfMonth));
-    // initialApr is derived from account fields above and doesn't need to be
-    // a dep itself.
+    setFundingId(fundingDefault?.id ?? "");
+    // initialApr / fundingDefault are derived from the account + accounts
+    // list above and don't need to be deps themselves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account.id]);
 
   useEffect(() => {
-    if (!savedHint) return;
-    const t = setTimeout(() => setSavedHint(false), 1200);
+    if (!savedHint && !scheduledHint) return;
+    const t = setTimeout(() => {
+      setSavedHint(false);
+      setScheduledHint(false);
+    }, 1500);
     return () => clearTimeout(t);
-  }, [savedHint]);
+  }, [savedHint, scheduledHint]);
 
   function commit() {
     setAccountDebtTerms(account.id, {
       apr: parseOptionalNumber(apr),
       minimumPayment: parseOptionalNumber(minPayment),
       paymentDueDayOfMonth: parseDueDay(dueDay),
+      defaultFundingAccountId: fundingId === "" ? null : fundingId,
     });
     setSavedHint(true);
   }
@@ -71,24 +122,62 @@ export default function DebtTermsCard({ account }: { account: Account }) {
   const aprFieldId = `debt-apr-${account.id}`;
   const minFieldId = `debt-min-${account.id}`;
   const dueFieldId = `debt-due-${account.id}`;
+  const fundFieldId = `debt-fund-${account.id}`;
 
-  // Build a one-tap "Schedule monthly payment" link that prefills the
-  // new-scheduled-transaction form. We only render it when both a min
-  // payment and a due day are set, otherwise there's nothing useful to
-  // prefill. The user picks the funding account + category on that page.
   const dueDayNum = parseDueDay(dueDay);
   const minNum = parseOptionalNumber(minPayment);
-  const nextDue = dueDayNum !== null ? nextDueDate(dueDayNum) : null;
-  const scheduleHref =
-    dueDayNum !== null && minNum !== null && minNum > 0 && nextDue
-      ? `/spending/scheduled/new?` +
-        new URLSearchParams({
-          label: `${account.name} payment`,
-          amount: String(-Math.abs(minNum)),
-          date: nextDue,
-          cadence: "monthly",
-        }).toString()
-      : null;
+  const nextDueIso = dueDayNum !== null ? nextDueDate(dueDayNum) : null;
+  const fundingAccount = accounts.find((a) => a.id === fundingId);
+
+  // Heuristic match for an already-scheduled monthly transfer into
+  // this debt: by toAccount name + cadence. If the debt account is
+  // renamed after scheduling, the link breaks and the card will offer
+  // to re-schedule (duplicate). We accept that — renaming is rare and
+  // recoverable.
+  const existingSchedule = useMemo(() => {
+    return scheduledTransactions.find(
+      (s) =>
+        isTransferSchedule(s) &&
+        s.cadence === "monthly" &&
+        s.toAccount === account.name,
+    );
+  }, [scheduledTransactions, account.name]);
+
+  const scheduleReady =
+    dueDayNum !== null &&
+    minNum !== null &&
+    minNum > 0 &&
+    nextDueIso !== null &&
+    fundingAccount !== undefined;
+
+  function handleSchedule() {
+    if (!scheduleReady || !nextDueIso || !fundingAccount || minNum === null) {
+      return;
+    }
+    // Persist the funding-account choice on the debt so the next
+    // schedule (or schedule-after-delete) reuses it without prompting.
+    setAccountDebtTerms(account.id, {
+      apr: parseOptionalNumber(apr),
+      minimumPayment: minNum,
+      paymentDueDayOfMonth: dueDayNum,
+      defaultFundingAccountId: fundingAccount.id,
+    });
+    addScheduled({
+      kind: "transfer",
+      cadence: "monthly",
+      nextDate: nextDueIso,
+      fromAccount: fundingAccount.name,
+      toAccount: account.name,
+      amount: Math.abs(minNum),
+      memo: `${account.name} minimum payment`,
+    });
+    setScheduledHint(true);
+  }
+
+  function handleUnschedule() {
+    if (!existingSchedule) return;
+    deleteScheduled(existingSchedule.id);
+  }
 
   return (
     <section className="rounded-2xl bg-card p-5">
@@ -96,8 +185,10 @@ export default function DebtTermsCard({ account }: { account: Account }) {
         <p className="text-xs font-medium uppercase tracking-wide text-fg/60">
           Debt Terms
         </p>
-        {savedHint && (
-          <span className="text-xs font-semibold text-emerald-400">Saved</span>
+        {(savedHint || scheduledHint) && (
+          <span className="text-xs font-semibold text-emerald-400">
+            {scheduledHint ? "Scheduled" : "Saved"}
+          </span>
         )}
       </div>
       <div className="mt-3 grid grid-cols-2 gap-3">
@@ -155,6 +246,25 @@ export default function DebtTermsCard({ account }: { account: Account }) {
             </span>
           )}
         </label>
+        <label htmlFor={fundFieldId} className="col-span-2 flex flex-col gap-1">
+          <span className="text-xs text-fg/55">Pay from</span>
+          <select
+            id={fundFieldId}
+            value={fundingId}
+            onChange={(e) => setFundingId(e.target.value)}
+            onBlur={commit}
+            className="rounded-xl bg-card-elevated px-3 py-2 text-base font-semibold text-fg outline-none"
+          >
+            <option value="">Select an account…</option>
+            {accounts
+              .filter((a) => ASSET_ACCOUNT_TYPES.has(a.type) && !a.closed)
+              .map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+          </select>
+        </label>
       </div>
       {account.type === "loan" && account.loanApr !== undefined && (
         <p className="mt-2 text-xs text-fg/50">
@@ -162,14 +272,44 @@ export default function DebtTermsCard({ account }: { account: Account }) {
           {account.loanApr.toFixed(2)}%).
         </p>
       )}
-      {scheduleHref && (
-        <Link
-          href={scheduleHref}
-          className="mt-3 flex items-center justify-center gap-2 rounded-full border border-accent/40 px-4 py-2.5 text-sm font-bold text-accent"
+
+      {existingSchedule ? (
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-emerald-500/10 px-4 py-2.5 text-sm">
+          <div className="flex items-center gap-2 text-emerald-300">
+            <CheckCircle2 size={16} strokeWidth={2.4} />
+            <span className="font-bold">
+              Scheduled monthly · next {shortDate(existingSchedule.nextDate)}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleUnschedule}
+            aria-label="Remove scheduled payment"
+            className="grid h-7 w-7 place-items-center rounded-full text-emerald-300/80 hover:bg-emerald-500/15"
+          >
+            <X size={14} strokeWidth={2.4} />
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={handleSchedule}
+          disabled={!scheduleReady}
+          className={`mt-3 flex w-full items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-sm font-bold transition-colors ${
+            scheduleReady
+              ? "border-accent/40 text-accent"
+              : "border-fg/15 text-fg/40 cursor-not-allowed"
+          }`}
         >
           <CalendarClock size={16} strokeWidth={2.4} />
           Schedule monthly payment
-        </Link>
+        </button>
+      )}
+      {!scheduleReady && !existingSchedule && (
+        <p className="mt-2 text-[11px] text-fg/45">
+          Set a minimum payment, due day, and pay-from account to enable
+          scheduling.
+        </p>
       )}
     </section>
   );

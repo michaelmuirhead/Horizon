@@ -308,6 +308,7 @@ type Action =
       apr: number | null;
       minimumPayment: number | null;
       paymentDueDayOfMonth: number | null;
+      defaultFundingAccountId: string | null;
     }
   | { type: "add_planner_entry"; entry: PlannerEntry }
   | { type: "update_planner_entry"; entry: PlannerEntry }
@@ -1147,11 +1148,13 @@ function coreReducer(state: State, action: Action): State {
             apr: _apr,
             minimumPayment: _min,
             paymentDueDayOfMonth: _due,
+            defaultFundingAccountId: _fund,
             ...rest
           } = a;
           void _apr;
           void _min;
           void _due;
+          void _fund;
           const next: Account = { ...rest };
           if (action.apr !== null && Number.isFinite(action.apr)) {
             next.apr = action.apr;
@@ -1169,6 +1172,12 @@ function coreReducer(state: State, action: Action): State {
             action.paymentDueDayOfMonth <= 31
           ) {
             next.paymentDueDayOfMonth = Math.floor(action.paymentDueDayOfMonth);
+          }
+          if (
+            action.defaultFundingAccountId !== null &&
+            action.defaultFundingAccountId.trim() !== ""
+          ) {
+            next.defaultFundingAccountId = action.defaultFundingAccountId;
           }
           return next;
         }),
@@ -1691,6 +1700,7 @@ type Ctx = {
       apr: number | null;
       minimumPayment: number | null;
       paymentDueDayOfMonth: number | null;
+      defaultFundingAccountId: string | null;
     },
   ) => void;
   addPlannerEntry: (entry: Omit<PlannerEntry, "id" | "order">) => void;
@@ -2501,6 +2511,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
         apr: number | null;
         minimumPayment: number | null;
         paymentDueDayOfMonth: number | null;
+        defaultFundingAccountId: string | null;
       },
     ) => {
       dispatch({
@@ -2509,6 +2520,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
         apr: terms.apr,
         minimumPayment: terms.minimumPayment,
         paymentDueDayOfMonth: terms.paymentDueDayOfMonth,
+        defaultFundingAccountId: terms.defaultFundingAccountId,
       });
     },
     [],
