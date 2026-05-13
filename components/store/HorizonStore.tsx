@@ -307,6 +307,7 @@ type Action =
       accountId: string;
       apr: number | null;
       minimumPayment: number | null;
+      paymentDueDayOfMonth: number | null;
     }
   | { type: "add_planner_entry"; entry: PlannerEntry }
   | { type: "update_planner_entry"; entry: PlannerEntry }
@@ -1142,9 +1143,15 @@ function coreReducer(state: State, action: Action): State {
         ...state,
         accounts: state.accounts.map((a) => {
           if (a.id !== action.accountId) return a;
-          const { apr: _apr, minimumPayment: _min, ...rest } = a;
+          const {
+            apr: _apr,
+            minimumPayment: _min,
+            paymentDueDayOfMonth: _due,
+            ...rest
+          } = a;
           void _apr;
           void _min;
+          void _due;
           const next: Account = { ...rest };
           if (action.apr !== null && Number.isFinite(action.apr)) {
             next.apr = action.apr;
@@ -1154,6 +1161,14 @@ function coreReducer(state: State, action: Action): State {
             Number.isFinite(action.minimumPayment)
           ) {
             next.minimumPayment = action.minimumPayment;
+          }
+          if (
+            action.paymentDueDayOfMonth !== null &&
+            Number.isFinite(action.paymentDueDayOfMonth) &&
+            action.paymentDueDayOfMonth >= 1 &&
+            action.paymentDueDayOfMonth <= 31
+          ) {
+            next.paymentDueDayOfMonth = Math.floor(action.paymentDueDayOfMonth);
           }
           return next;
         }),
@@ -1672,7 +1687,11 @@ type Ctx = {
   setAccountNote: (accountId: string, note: string) => void;
   setAccountDebtTerms: (
     accountId: string,
-    terms: { apr: number | null; minimumPayment: number | null },
+    terms: {
+      apr: number | null;
+      minimumPayment: number | null;
+      paymentDueDayOfMonth: number | null;
+    },
   ) => void;
   addPlannerEntry: (entry: Omit<PlannerEntry, "id" | "order">) => void;
   updatePlannerEntry: (entry: PlannerEntry) => void;
@@ -2478,13 +2497,18 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
   const setAccountDebtTerms = useCallback(
     (
       accountId: string,
-      terms: { apr: number | null; minimumPayment: number | null },
+      terms: {
+        apr: number | null;
+        minimumPayment: number | null;
+        paymentDueDayOfMonth: number | null;
+      },
     ) => {
       dispatch({
         type: "set_account_debt_terms",
         accountId,
         apr: terms.apr,
         minimumPayment: terms.minimumPayment,
+        paymentDueDayOfMonth: terms.paymentDueDayOfMonth,
       });
     },
     [],
