@@ -39,11 +39,14 @@ type Props = {
 // How far the user has to swipe before we lock the gesture as a
 // horizontal swipe (anything less reads as a tap or vertical scroll).
 const HORIZONTAL_LOCK = 8;
-// How far past resting state a release commits the action.
-const COMMIT_PX = 96;
+// Commit thresholds. Left-swipe (mark paid) is reversible with another
+// tap; right-swipe deletes the row, so we require a deliberately longer
+// pull to reduce accidental triggers.
+const PAID_COMMIT_PX = 96;
+const DELETE_COMMIT_PX = 140;
 // Ceiling on the visible offset — past this the row stops moving so
 // the reveal pane doesn't disappear off-screen.
-const MAX_PULL_PX = 160;
+const MAX_PULL_PX = 180;
 
 export default function PlannerEntryRow({
   entry,
@@ -136,9 +139,9 @@ export default function PlannerEntryRow({
     if (lockedRef.current) {
       suppressClickRef.current = true;
       const action: "paid" | "delete" | null =
-        dragX <= -COMMIT_PX
+        dragX <= -PAID_COMMIT_PX
           ? "paid"
-          : dragX >= COMMIT_PX
+          : dragX >= DELETE_COMMIT_PX
             ? "delete"
             : null;
       endSwipe(action);
@@ -168,8 +171,8 @@ export default function PlannerEntryRow({
     : {};
 
   const paidLabel = paid ? "Unpaid" : "Paid";
-  const paidActive = dragX <= -COMMIT_PX;
-  const deleteActive = dragX >= COMMIT_PX;
+  const paidActive = dragX <= -PAID_COMMIT_PX;
+  const deleteActive = dragX >= DELETE_COMMIT_PX;
   const showPaidPane = dragX < 0;
   const showDeletePane = dragX > 0;
 

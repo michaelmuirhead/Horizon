@@ -26,6 +26,7 @@ export default function PlannerBudgetPage({
     setPlannerEntryPaid,
     deletePlannerEntry,
     reorderPlannerEntry,
+    markUndoable,
   } = useHorizonStore();
 
   const folder = plannerFolders.find((f) => f.id === folderId);
@@ -121,13 +122,8 @@ export default function PlannerBudgetPage({
                     setPlannerEntryPaid(entry.id, !entry.paid)
                   }
                   onDelete={() => {
-                    if (
-                      window.confirm(
-                        `Delete "${entry.label}"? This can't be undone.`,
-                      )
-                    ) {
-                      deletePlannerEntry(entry.id);
-                    }
+                    markUndoable(`Entry "${entry.label}" deleted`);
+                    deletePlannerEntry(entry.id);
                   }}
                   dragHandle={
                     <button
