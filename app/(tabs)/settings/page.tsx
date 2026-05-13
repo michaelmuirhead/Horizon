@@ -8,6 +8,7 @@ import {
   CloudOff,
   ChevronRight,
   Download,
+  LayoutDashboard,
   Layers,
   LogOut,
   Share2,
@@ -175,6 +176,22 @@ export default function SettingsPage() {
             <span className="mt-0.5 block text-xs text-fg/60">
               Auto-set a category when a payee matches a pattern. Applied to
               new transactions and CSV imports.
+            </span>
+          </span>
+          <ChevronRight size={18} className="text-fg/55" />
+        </Link>
+
+        <Link
+          href="/settings/home-layout"
+          className="flex items-center gap-3 rounded-2xl bg-card p-4"
+        >
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent/15 text-accent">
+            <LayoutDashboard size={18} strokeWidth={2.4} />
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-base font-bold">Customize home</span>
+            <span className="mt-0.5 block text-xs text-fg/60">
+              Reorder or hide sections on the home tab.
             </span>
           </span>
           <ChevronRight size={18} className="text-fg/55" />

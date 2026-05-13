@@ -38,16 +38,73 @@ function liquidBalance(accounts: Account[], transactions: Transaction[]): number
   return total;
 }
 
+// Average daily net cash flow from the last `lookbackDays` of history,
+// EXCLUDING transactions whose payee matches a scheduled row (we don't
+// want to double-count those — projectCashFlow already applies the
+// schedule). Returns 0 when there isn't enough history to be meaningful.
+//
+// Used as a "baseline drift" on long-horizon forecasts so the chart
+// doesn't go flat between scheduled events on months 4..12 (where
+// real-life day-to-day spending dominates and the schedule alone is
+// over-optimistic).
+export function baselineDailyDrift(
+  accounts: Account[],
+  transactions: Transaction[],
+  scheds: ScheduledTransaction[],
+  todayIso: string,
+  lookbackDays = 90,
+): number {
+  if (lookbackDays <= 0) return 0;
+  const cutoffDate = new Date(todayIso);
+  cutoffDate.setDate(cutoffDate.getDate() - lookbackDays);
+  const cutoffIso = toIso(cutoffDate);
+
+  const assetNames = new Set<string>();
+  for (const a of accounts) {
+    if (a.closed || a.tracking) continue;
+    if (ASSET_ACCOUNT_TYPES.has(a.type)) assetNames.add(a.name);
+  }
+  const scheduledPayees = new Set<string>();
+  for (const s of scheds) {
+    if (isTransferSchedule(s)) continue;
+    if (!s.payee) continue;
+    scheduledPayees.add(s.payee.trim().toLowerCase());
+  }
+
+  let net = 0;
+  let countedDays = 0;
+  const seenDates = new Set<string>();
+  for (const t of transactions) {
+    if (t.transferId) continue;
+    if (t.isReadyToAssign) continue;
+    if (t.date < cutoffIso || t.date > todayIso) continue;
+    if (!assetNames.has(t.account)) continue;
+    if (scheduledPayees.has(t.payee.trim().toLowerCase())) continue;
+    net += t.amount;
+    seenDates.add(t.date);
+  }
+  countedDays = Math.max(1, lookbackDays);
+  // We deliberately divide by the FULL lookback window, not just days
+  // with activity — sparse weekends should pull the average down, not
+  // get rounded out.
+  void seenDates;
+  return net / countedDays;
+}
+
 // Walks forward from today, applying every scheduled occurrence in the
-// window to a running asset-only balance. The result is a daily series
-// suitable for a sparkline plus the lowest projected dip — the headline
-// number for a cash-flow projection ("how tight does it get?").
+// window to a running asset-only balance, optionally layered with a
+// per-day baseline drift derived from history. The result is a daily
+// series suitable for a sparkline plus the lowest projected dip — the
+// headline number for a cash-flow projection ("how tight does it get?").
 export function projectCashFlow(
   accounts: Account[],
   transactions: Transaction[],
   scheds: ScheduledTransaction[],
   daysAhead: number,
   todayIso: string,
+  // 0 = scheduled-only (the previous behavior); pass the output of
+  // baselineDailyDrift to layer in everyday spending.
+  baselineDrift: number = 0,
 ): CashFlowProjection {
   const start = liquidBalance(accounts, transactions);
   const end = new Date(todayIso);
@@ -89,6 +146,12 @@ export function projectCashFlow(
   const cursor = new Date(todayIso);
   for (let i = 0; i <= daysAhead; i++) {
     const iso = toIso(cursor);
+    if (i > 0) {
+      // Apply the baseline drift before scheduled deltas so day-0 reads
+      // exactly the current liquid balance (no surprise jump on the
+      // first cell of the chart).
+      running += baselineDrift;
+    }
     running += dailyDelta.get(iso) ?? 0;
     series.push({ date: iso, balance: running });
     if (running < low.balance) low = { date: iso, balance: running };
