@@ -179,6 +179,11 @@ type State = {
   savingsGoals: SavingsGoal[];
   templates: TransactionTemplate[];
   settings: AppSettings;
+  // ms since epoch of the last user-driven mutation. Compared against the
+  // cloud doc's updatedAt at sign-in to decide which side wins, instead of
+  // prompting the user. Hydrate / restore / first-launch leave this alone
+  // (they carry their own stamp in the payload).
+  lastModifiedAt: number;
   hydrated: boolean;
 };
 
@@ -202,6 +207,7 @@ type Action =
       savingsGoals: SavingsGoal[];
       templates: TransactionTemplate[];
       settings: AppSettings;
+      lastModifiedAt: number;
     }
   | { type: "add_transaction"; tx: Transaction }
   | { type: "add_transactions"; txs: Transaction[] }
@@ -361,6 +367,7 @@ const initialState: State = {
   savingsGoals: sampleSavingsGoals,
   templates: sampleTemplates,
   settings: defaultSettings,
+  lastModifiedAt: 0,
   hydrated: false,
 };
 
@@ -445,7 +452,17 @@ function migratePlannerEntries(
   });
 }
 
+// Wraps the core reducer to stamp `lastModifiedAt` on any state-changing
+// mutation. hydrate / restore carry their own stamp in the action payload —
+// passing them through keeps cloud + local clocks aligned across reloads.
 function reducer(state: State, action: Action): State {
+  const next = coreReducer(state, action);
+  if (next === state) return state;
+  if (action.type === "hydrate" || action.type === "restore") return next;
+  return { ...next, lastModifiedAt: Date.now() };
+}
+
+function coreReducer(state: State, action: Action): State {
   switch (action.type) {
     case "hydrate":
       return {
@@ -466,6 +483,7 @@ function reducer(state: State, action: Action): State {
         savingsGoals: action.savingsGoals,
         templates: action.templates,
         settings: action.settings,
+        lastModifiedAt: action.lastModifiedAt,
         hydrated: true,
       };
     case "add_transaction":
@@ -1187,11 +1205,23 @@ function reducer(state: State, action: Action): State {
         ),
       };
     }
-    case "add_planner_entry":
+    case "add_planner_entry": {
+      // Make room at the target order so the new entry slots in cleanly.
+      // Any sibling whose order is >= the new entry's gets bumped down by
+      // one. For appends (caller picked maxOrder + 1) this loop is a
+      // no-op; for mid-list inserts (e.g. same-date grouping) it keeps
+      // ordering dense.
+      const insertOrder = action.entry.order ?? Number.MAX_SAFE_INTEGER;
+      const shifted = state.plannerEntries.map((e) => {
+        if (e.budgetId !== action.entry.budgetId) return e;
+        const o = e.order ?? Number.MAX_SAFE_INTEGER;
+        return o >= insertOrder ? { ...e, order: o + 1 } : e;
+      });
       return {
         ...state,
-        plannerEntries: [action.entry, ...state.plannerEntries],
+        plannerEntries: [action.entry, ...shifted],
       };
+    }
     case "update_planner_entry":
       return {
         ...state,
@@ -1436,6 +1466,10 @@ function reducer(state: State, action: Action): State {
           typeof (action.payload.settings as AppSettings).currency === "string"
             ? (action.payload.settings as AppSettings)
             : state.settings,
+        lastModifiedAt:
+          typeof action.payload.lastModifiedAt === "number"
+            ? action.payload.lastModifiedAt
+            : state.lastModifiedAt,
         hydrated: true,
       };
     case "auto_fund_recurring_targets": {
@@ -1648,6 +1682,9 @@ type Ctx = {
   setSettings: (settings: AppSettings) => void;
   restoreFromBackup: (payload: Partial<State>) => void;
   exportBackup: () => Partial<State>;
+  // Stamp of the last user mutation; consumed by CloudSyncBridge to decide
+  // last-writer-wins between local and the cloud doc.
+  lastModifiedAt: number;
   budgets: BudgetMeta[];
   currentBudgetId: string;
   currentBudgetHouseholdId: string | undefined;
@@ -1878,6 +1915,10 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
               typeof (parsed.settings as AppSettings).currency === "string"
                 ? (parsed.settings as AppSettings)
                 : defaultSettings,
+            lastModifiedAt:
+              typeof parsed.lastModifiedAt === "number"
+                ? parsed.lastModifiedAt
+                : 0,
           });
           return;
         }
@@ -1905,6 +1946,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       savingsGoals: sampleSavingsGoals,
       templates: sampleTemplates,
       settings: defaultSettings,
+      lastModifiedAt: 0,
     });
   }, []);
 
@@ -2120,6 +2162,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
           savingsGoals: state.savingsGoals,
           templates: state.templates,
           settings: state.settings,
+          lastModifiedAt: state.lastModifiedAt,
         }),
       );
     } catch {
@@ -2433,9 +2476,12 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
 
   const addPlannerEntry = useCallback(
     (entry: Omit<PlannerEntry, "id" | "order">) => {
-      // New entries land at the end of their budget by default. We read
-      // stateRef so the value stays current even though the callback
-      // identity is stable.
+      // New entries land at the end of their budget by default. If the
+      // new entry shares a date with any existing sibling, slot it just
+      // after the most recent (highest-order) same-date row instead so
+      // dated rows stay grouped chronologically. The reducer shifts any
+      // higher orders to make room. We read stateRef so the value stays
+      // current even though the callback identity is stable.
       const siblings = stateRef.plannerEntries.filter(
         (e) => e.budgetId === entry.budgetId,
       );
@@ -2443,9 +2489,20 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
         (m, e) => Math.max(m, e.order ?? -1),
         -1,
       );
+      let insertOrder = maxOrder + 1;
+      if (entry.date) {
+        const sameDateMaxOrder = siblings.reduce((m, e) => {
+          if (e.date !== entry.date) return m;
+          const o = e.order ?? -1;
+          return o > m ? o : m;
+        }, -1);
+        if (sameDateMaxOrder >= 0) {
+          insertOrder = sameDateMaxOrder + 1;
+        }
+      }
       dispatch({
         type: "add_planner_entry",
-        entry: { id: makeId(), order: maxOrder + 1, ...entry },
+        entry: { ...entry, id: makeId(), order: insertOrder },
       });
     },
     [],
@@ -2620,7 +2677,14 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
           plannerBudgets: state.plannerBudgets,
           plannerEntries: state.plannerEntries,
           scheduledTransactions: state.scheduledTransactions,
+          reconciliations: state.reconciliations,
+          monthNotes: state.monthNotes,
+          rules: state.rules,
+          wishlist: state.wishlist,
+          savingsGoals: state.savingsGoals,
+          templates: state.templates,
           settings: state.settings,
+          lastModifiedAt: state.lastModifiedAt,
         }),
       );
     } catch {
@@ -3034,7 +3098,14 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       plannerBudgets: stateRef.plannerBudgets,
       plannerEntries: stateRef.plannerEntries,
       scheduledTransactions: stateRef.scheduledTransactions,
+      reconciliations: stateRef.reconciliations,
+      monthNotes: stateRef.monthNotes,
+      rules: stateRef.rules,
+      wishlist: stateRef.wishlist,
+      savingsGoals: stateRef.savingsGoals,
+      templates: stateRef.templates,
       settings: stateRef.settings,
+      lastModifiedAt: stateRef.lastModifiedAt,
     };
   }, [stateRef]);
 
@@ -3127,6 +3198,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       setSettings,
       restoreFromBackup,
       exportBackup,
+      lastModifiedAt: state.lastModifiedAt,
       budgets: budgetIndex?.budgets ?? [],
       currentBudgetId: budgetIndex?.currentBudgetId ?? DEFAULT_BUDGET_ID,
       currentBudgetHouseholdId: budgetIndex?.budgets.find(
@@ -3236,6 +3308,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       setSettings,
       restoreFromBackup,
       exportBackup,
+      state.lastModifiedAt,
       budgetIndex,
       switchBudget,
       createBudget,
