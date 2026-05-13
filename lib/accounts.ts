@@ -31,6 +31,11 @@ export type Account = {
   // Credit-card accounts auto-create a paired payment category to fund
   // future bill payments from. This points to that category's id.
   ccPaymentCategoryId?: string;
+  // Bill accounts mirror into a budget category under the "Bills"
+  // group so the user can fund them from the Budget tab. Set
+  // automatically on add and kept in sync on rename / delete /
+  // terms-change.
+  billCategoryId?: string;
   // Loan amortization inputs. Only meaningful for type "loan".
   loanApr?: number; // annual percentage rate, e.g. 6.5 for 6.5%
   loanTermMonths?: number;
@@ -71,6 +76,12 @@ export type Account = {
 };
 
 export const CC_PAYMENTS_GROUP_NAME = "Credit Card Payments";
+
+// Bills mirror into a fixed group on the Budget tab so the user can
+// assign money for each one. The id is stable so the group can be
+// recreated cleanly after a user accidentally deletes it.
+export const BILLS_GROUP_ID = "bills";
+export const BILLS_GROUP_NAME = "Bills";
 
 export type Reconciliation = {
   id: string;
