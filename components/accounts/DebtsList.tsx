@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { PlusCircle } from "lucide-react";
+import { Calculator, PlusCircle } from "lucide-react";
 import { useHorizonStore } from "@/components/store/HorizonStore";
 import { isDebtAccount, listDebts, summarizeDebts } from "@/lib/debts";
 import { upcomingDebtDues } from "@/lib/debtDueDate";
@@ -89,6 +89,14 @@ export default function DebtsList() {
           </li>
         ))}
       </ul>
+
+      <Link
+        href="/accounts/debts/payoff"
+        className="flex items-center justify-center gap-2 rounded-full border border-accent/40 px-4 py-2.5 text-sm font-bold text-accent"
+      >
+        <Calculator size={16} strokeWidth={2.4} />
+        Plan a payoff strategy
+      </Link>
 
       <p className="px-2 text-xs text-fg/50">
         Tap a debt to set its APR or monthly minimum.

@@ -13,6 +13,7 @@ import {
   ListFilter,
   Repeat,
   Search,
+  Sparkles,
   Tag,
   Tags,
   Trash2,
@@ -323,6 +324,13 @@ function Spending() {
               className="grid h-10 w-10 place-items-center"
             >
               <Repeat size={18} strokeWidth={2.2} />
+            </Link>
+            <Link
+              href="/spending/recurring"
+              aria-label="Detected recurring"
+              className="grid h-10 w-10 place-items-center"
+            >
+              <Sparkles size={18} strokeWidth={2.2} />
             </Link>
             <Link
               href="/spending/templates"

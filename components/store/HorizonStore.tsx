@@ -2040,9 +2040,30 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
     return () => mql.removeEventListener("change", apply);
   }, [state.settings.theme]);
 
-  // Local notifications on app load — overspent categories and targets with
-  // due dates inside the next 7 days. Dedup via localStorage so the same
-  // alert doesn't fire repeatedly within a 24h window.
+  // Bumps when we should re-evaluate notifications: on tab focus (so
+  // users coming back to a backgrounded PWA after lunch see the
+  // afternoon's alerts), and once an hour while the app is open. The
+  // 24h localStorage dedup keeps the same alert from firing repeatedly
+  // within that window.
+  const [notifyTick, setNotifyTick] = useState(0);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const bump = () => setNotifyTick((n) => n + 1);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") bump();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    const interval = window.setInterval(bump, 60 * 60 * 1000);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  // Local notifications — overspent categories, by-date targets, and
+  // debt payments due in the next 7 days. Dedup via localStorage so the
+  // same alert doesn't fire repeatedly within a 24h window. Re-runs on
+  // hydrate and on every notifyTick bump (tab focus + hourly).
   useEffect(() => {
     if (!state.hydrated) return;
     if (typeof window === "undefined") return;
@@ -2126,6 +2147,56 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       });
     }
 
+    // Debt payments due within the next week. Dedup key carries the
+    // exact next-due date so the alert refreshes naturally each month
+    // (a different dueDate string → a different storage key → fresh
+    // 24h window).
+    for (const account of state.accounts) {
+      if (account.closed) continue;
+      if (typeof account.paymentDueDayOfMonth !== "number") continue;
+      const day = account.paymentDueDayOfMonth;
+      // Compute next due inline — small enough not to warrant importing
+      // the helper through the reducer module boundary, and we have
+      // `now` already.
+      const yr = now.getFullYear();
+      const mo = now.getMonth();
+      const lastOfThis = new Date(yr, mo + 1, 0).getDate();
+      const thisCand = Math.min(day, lastOfThis);
+      const thisCandTime = new Date(yr, mo, thisCand).setHours(0, 0, 0, 0);
+      const startOfToday = new Date(yr, mo, now.getDate()).setHours(
+        0,
+        0,
+        0,
+        0,
+      );
+      let dueTime: number;
+      if (thisCandTime >= startOfToday) {
+        dueTime = thisCandTime;
+      } else {
+        const lastOfNext = new Date(yr, mo + 2, 0).getDate();
+        dueTime = new Date(yr, mo + 1, Math.min(day, lastOfNext)).setHours(
+          0,
+          0,
+          0,
+          0,
+        );
+      }
+      const days = (dueTime - startOfToday) / (1000 * 60 * 60 * 24);
+      if (days < 0 || days > 7) continue;
+      const dueIsoForKey = new Date(dueTime).toISOString().slice(0, 10);
+      const phrase =
+        days === 0
+          ? "today"
+          : days === 1
+            ? "tomorrow"
+            : `in ${Math.round(days)} days`;
+      fired.push({
+        key: `debt-due:${account.id}:${dueIsoForKey}`,
+        title: "Debt payment due",
+        body: `${account.name} payment is due ${phrase}.`,
+      });
+    }
+
     // Spending alerts — fire once when a "spending" target crosses 80%
     // and once again at 100% in a given month. Dedup keys carry the month
     // so the alert fires fresh each new month.
@@ -2178,9 +2249,10 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
         // ignore
       }
     }
-    // Run once per hydration; dedup is via localStorage.
+    // Run on hydrate, tab-focus, and the hourly tick. The 24h dedup in
+    // localStorage handles the spam risk of re-runs themselves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.hydrated]);
+  }, [state.hydrated, notifyTick]);
 
   // Persist after hydration. Writes go to the active budget's key, not the
   // legacy single-budget key.
