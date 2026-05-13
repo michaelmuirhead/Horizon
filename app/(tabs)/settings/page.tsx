@@ -29,8 +29,30 @@ const THEMES: { value: ThemeName; label: string; tagline: string }[] = [
   { value: "auto", label: "Auto", tagline: "Follows your system theme" },
   { value: "dark", label: "Midnight", tagline: "Deep indigo (default)" },
   { value: "light", label: "Daylight", tagline: "Crisp light surfaces" },
+  { value: "solarized", label: "Solarized", tagline: "Calm cool dev palette" },
+  {
+    value: "newspaper",
+    label: "Newspaper",
+    tagline: "Print ledger — cream paper, ink, editorial red",
+  },
+  {
+    value: "bankers",
+    label: "Banker's Lamp",
+    tagline: "Parchment + banker's green + brass",
+  },
+  {
+    value: "apollo",
+    label: "Apollo",
+    tagline: "60s Mission Control — cream, olive, safety orange",
+  },
   { value: "pokemon", label: "Pokémon", tagline: "Pokéball red on Poké blue" },
   { value: "pipboy", label: "Pip-Boy", tagline: "Phosphor green CRT terminal" },
+  {
+    value: "bloomberg",
+    label: "Bloomberg",
+    tagline: "Amber terminal — Quotron on black",
+  },
+  { value: "gameboy", label: "Game Boy", tagline: "DMG 4-shade LCD greens" },
 ];
 
 const SUPPORTED_CURRENCIES = [
