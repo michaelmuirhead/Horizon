@@ -46,6 +46,7 @@ export async function pushBudget(
   uid: string,
   budgetId: string,
   payload: unknown,
+  updatedAt: number = Date.now(),
 ): Promise<void> {
   const handles = await getFirebase();
   if (!handles) return;
@@ -53,7 +54,7 @@ export async function pushBudget(
   const ref = doc(handles.db, ...userBudgetPath(uid, budgetId));
   const body: CloudBudgetDoc = {
     payload,
-    updatedAt: Date.now(),
+    updatedAt,
     schemaVersion: SCHEMA_VERSION,
   };
   await setDoc(ref, body);
@@ -91,6 +92,7 @@ export async function subscribeBudget(
 export async function pushHouseholdBudget(
   householdId: string,
   payload: unknown,
+  updatedAt: number = Date.now(),
 ): Promise<void> {
   const handles = await getFirebase();
   if (!handles) return;
@@ -98,7 +100,7 @@ export async function pushHouseholdBudget(
   const ref = doc(handles.db, ...householdBudgetPath(householdId));
   const body: CloudBudgetDoc = {
     payload,
-    updatedAt: Date.now(),
+    updatedAt,
     schemaVersion: SCHEMA_VERSION,
   };
   await setDoc(ref, body);
