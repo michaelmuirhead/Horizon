@@ -60,6 +60,54 @@
   --mint-rgb: 255 203 5;
 }
 
+/* Pip-Boy — phosphor-green on near-black, the Fallout terminal palette.
+ * Text is tinted green via --fg-rgb so every label, value, and icon
+ * picks up the CRT feel without per-component overrides. Rose / amber
+ * status colours (overspent, warnings) intentionally stay loud — that
+ * matches how a Pip-Boy actually surfaces "BAD" states. */
+[data-theme="pipboy"] {
+  color-scheme: dark;
+  --page: #040806;
+  --card: #0a160c;
+  --card-elevated: #10221d;
+  --list-row: #081208;
+  --pill: #1b3a1e;
+  --pill-text: #b6ffb6;
+  --accent: #4eff5a;          /* phosphor green */
+  --accent-soft: #36c540;
+  --mint: #a8ff8c;            /* paler reactor-glow green */
+  --gradient-from: #1aff1a;
+  --gradient-to: #055a05;
+  --fg-rgb: 184 255 184;
+  --accent-rgb: 78 255 90;
+  --mint-rgb: 168 255 140;
+}
+
+/* Faint CRT scanlines layered over the page only in the Pip-Boy theme.
+ * Pointer-events: none keeps the overlay from intercepting taps, and
+ * the 2px stride is gentle enough not to interfere with text reading
+ * at standard zoom levels. */
+[data-theme="pipboy"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 0) 0,
+    rgb(0 0 0 / 0) 1px,
+    rgb(0 0 0 / 0.18) 1px,
+    rgb(0 0 0 / 0.18) 2px
+  );
+  mix-blend-mode: multiply;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Scanlines are static, not animated — leaving the static overlay in
+   * place is fine for reduced-motion users. No override needed. */
+}
+
 html,
 body {
   background-color: var(--page);
