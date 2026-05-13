@@ -452,13 +452,26 @@ function migratePlannerEntries(
   });
 }
 
-// Wraps the core reducer to stamp `lastModifiedAt` on any state-changing
-// mutation. hydrate / restore carry their own stamp in the action payload —
-// passing them through keeps cloud + local clocks aligned across reloads.
+// Action types whose effects should NOT bump lastModifiedAt: hydrate /
+// restore carry their own stamp in the payload, and the two automatic
+// catch-up actions fire on every app open (potentially on multiple
+// devices the same morning). Bumping on those would have two devices
+// race to push identical post-catch-up state on every cold start.
+const NON_USER_ACTION_TYPES = new Set<Action["type"]>([
+  "hydrate",
+  "restore",
+  "post_due_scheduled",
+  "auto_fund_recurring_targets",
+]);
+
+// Wraps the core reducer to stamp `lastModifiedAt` on any user-driven
+// state change. Pass-through cases (see NON_USER_ACTION_TYPES) keep the
+// previous stamp so background catch-up work doesn't trigger spurious
+// cloud pushes.
 function reducer(state: State, action: Action): State {
   const next = coreReducer(state, action);
   if (next === state) return state;
-  if (action.type === "hydrate" || action.type === "restore") return next;
+  if (NON_USER_ACTION_TYPES.has(action.type)) return next;
   return { ...next, lastModifiedAt: Date.now() };
 }
 
