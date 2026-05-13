@@ -1340,7 +1340,17 @@ function coreReducer(state: State, action: Action): State {
       if (!source || !target || source.budgetId !== target.budgetId) {
         return state;
       }
+      // Display sort is date-primary, so a drag that crosses date
+      // groups only makes sense if we also retag the source to the
+      // target's date — otherwise the drop snaps back on next render.
+      // We treat the gesture as "place this entry next to that
+      // neighbor", date included.
+      const updatedSource =
+        source.date === target.date
+          ? source
+          : { ...source, date: target.date };
       const budgetEntries = state.plannerEntries
+        .map((e) => (e.id === source.id ? updatedSource : e))
         .filter((e) => e.budgetId === source.budgetId)
         .slice()
         .sort((a, b) => {
@@ -1360,7 +1370,7 @@ function coreReducer(state: State, action: Action): State {
       const insertAt = targetIdx + (action.position === "after" ? 1 : 0);
       const reordered = [
         ...without.slice(0, insertAt),
-        source,
+        updatedSource,
         ...without.slice(insertAt),
       ];
       const reorderedById = new Map<string, number>();
@@ -1370,7 +1380,11 @@ function coreReducer(state: State, action: Action): State {
         plannerEntries: state.plannerEntries.map((e) => {
           if (e.budgetId !== source.budgetId) return e;
           const i = reorderedById.get(e.id);
-          return i === undefined ? e : { ...e, order: i };
+          if (i === undefined) return e;
+          // Apply both the new order and (for the source row only) the
+          // retagged date.
+          const base = e.id === source.id ? updatedSource : e;
+          return { ...base, order: i };
         }),
       };
     }
