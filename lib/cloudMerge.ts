@@ -12,7 +12,12 @@
 //     deletes are rare and the user can re-delete; we'd rather risk a
 //     resurrected row than lose every other concurrent edit.
 
-type IdItem = { id: string };
+// Element shape for id-keyed collections. The optional `name` lets
+// callers (and tests) read the property off a merged entry without a
+// cast — every real id-keyed entity in the schema has a name
+// (accounts, groups, categories, planner folders/budgets, etc.), so
+// declaring it here costs nothing and keeps the public type honest.
+type IdItem = { id: string; name?: string };
 
 type StatePayload = {
   transactions?: IdItem[];
