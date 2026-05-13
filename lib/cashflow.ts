@@ -38,23 +38,51 @@ function liquidBalance(accounts: Account[], transactions: Transaction[]): number
   return total;
 }
 
-// Average daily net cash flow from the last `lookbackDays` of history,
+export type BaselineDrift = {
+  // Average per-day net cash flow. Negative = burn rate.
+  drift: number;
+  // How many days of history actually fed the average. Equals
+  // `lookbackDays` when the user has at least that much data, otherwise
+  // the actual span from the earliest matching transaction to today.
+  // 0 when no matching history exists.
+  daysOfHistory: number;
+  // Count of transactions that contributed (asset-account, non-scheduled,
+  // non-transfer, non-RTA).
+  txCount: number;
+  // True when the drift is on solid enough ground to surface in a
+  // long-horizon forecast. Callers can fall back to 0 drift when false
+  // and warn the user explicitly.
+  hasEnoughData: boolean;
+};
+
+// Minimums for the drift to be considered usable. Below either floor,
+// the average is too noisy to project years out — we'd rather render a
+// flat schedule-only line and tell the user why.
+const MIN_HISTORY_DAYS = 14;
+const MIN_TX_COUNT = 8;
+
+// Average daily net cash flow from up to `lookbackDays` of history,
 // EXCLUDING transactions whose payee matches a scheduled row (we don't
 // want to double-count those — projectCashFlow already applies the
-// schedule). Returns 0 when there isn't enough history to be meaningful.
+// schedule).
 //
-// Used as a "baseline drift" on long-horizon forecasts so the chart
-// doesn't go flat between scheduled events on months 4..12 (where
-// real-life day-to-day spending dominates and the schedule alone is
-// over-optimistic).
+// Returns the actual span of history used, not the full window — so a
+// user with two weeks of data divides by ~14, not 90. Pair the result
+// with `hasEnoughData` to decide whether to layer the drift in.
 export function baselineDailyDrift(
   accounts: Account[],
   transactions: Transaction[],
   scheds: ScheduledTransaction[],
   todayIso: string,
   lookbackDays = 90,
-): number {
-  if (lookbackDays <= 0) return 0;
+): BaselineDrift {
+  const empty: BaselineDrift = {
+    drift: 0,
+    daysOfHistory: 0,
+    txCount: 0,
+    hasEnoughData: false,
+  };
+  if (lookbackDays <= 0) return empty;
   const cutoffDate = new Date(todayIso);
   cutoffDate.setDate(cutoffDate.getDate() - lookbackDays);
   const cutoffIso = toIso(cutoffDate);
@@ -72,8 +100,8 @@ export function baselineDailyDrift(
   }
 
   let net = 0;
-  let countedDays = 0;
-  const seenDates = new Set<string>();
+  let txCount = 0;
+  let earliest: string | null = null;
   for (const t of transactions) {
     if (t.transferId) continue;
     if (t.isReadyToAssign) continue;
@@ -81,14 +109,29 @@ export function baselineDailyDrift(
     if (!assetNames.has(t.account)) continue;
     if (scheduledPayees.has(t.payee.trim().toLowerCase())) continue;
     net += t.amount;
-    seenDates.add(t.date);
+    txCount += 1;
+    if (earliest === null || t.date < earliest) earliest = t.date;
   }
-  countedDays = Math.max(1, lookbackDays);
-  // We deliberately divide by the FULL lookback window, not just days
-  // with activity — sparse weekends should pull the average down, not
-  // get rounded out.
-  void seenDates;
-  return net / countedDays;
+  if (txCount === 0 || earliest === null) return empty;
+
+  // Span = days between earliest matching tx and today (inclusive), capped
+  // at the requested lookbackDays. Dividing by the actual span keeps the
+  // drift honest when the user has < 90 days of activity.
+  const earliestDate = new Date(earliest);
+  const today = new Date(todayIso);
+  const spanMs = today.getTime() - earliestDate.getTime();
+  const daysOfHistory = Math.min(
+    lookbackDays,
+    Math.max(1, Math.round(spanMs / 86_400_000) + 1),
+  );
+  const drift = net / daysOfHistory;
+  return {
+    drift,
+    daysOfHistory,
+    txCount,
+    hasEnoughData:
+      daysOfHistory >= MIN_HISTORY_DAYS && txCount >= MIN_TX_COUNT,
+  };
 }
 
 // Walks forward from today, applying every scheduled occurrence in the

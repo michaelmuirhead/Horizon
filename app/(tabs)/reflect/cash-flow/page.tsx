@@ -35,17 +35,18 @@ export default function CashFlowProjectionPage() {
   // Only layer in the baseline drift on long horizons. Inside ~60 days
   // the schedule + RTA assumptions dominate and adding drift overstates
   // discretionary noise; past that, a flat line is unrealistic.
-  const drift =
+  const baseline =
     days > 60
       ? baselineDailyDrift(accounts, transactions, scheduledTransactions, today)
-      : 0;
+      : null;
+  const driftToApply = baseline?.hasEnoughData ? baseline.drift : 0;
   const projection = projectCashFlow(
     accounts,
     transactions,
     scheduledTransactions,
     days,
     today,
-    drift,
+    driftToApply,
   );
   const change = projection.end - projection.start;
   const dipsBelowZero = projection.low.balance < 0;
@@ -132,24 +133,45 @@ export default function CashFlowProjectionPage() {
           </div>
         )}
 
+        {baseline && !baseline.hasEnoughData && (
+          <div className="rounded-2xl bg-amber-900/25 px-4 py-3 text-sm text-amber-200">
+            <p className="font-semibold">
+              Sparse history — baseline drift omitted.
+            </p>
+            <p className="mt-1 text-xs text-amber-200/85">
+              {baseline.daysOfHistory === 0 ? (
+                <>
+                  No non-scheduled activity in the last 90 days, so the line
+                  past 60 days reflects scheduled events only. Real life
+                  spending will pull it lower.
+                </>
+              ) : (
+                <>
+                  Only {baseline.daysOfHistory}{" "}
+                  {baseline.daysOfHistory === 1 ? "day" : "days"} of history
+                  ({baseline.txCount}{" "}
+                  {baseline.txCount === 1 ? "transaction" : "transactions"})
+                  &mdash; not enough to reliably extrapolate{" "}
+                  {Math.round(days / 30)} months out. The line past 60 days
+                  reflects scheduled events only.
+                </>
+              )}
+            </p>
+          </div>
+        )}
+
         <p className="px-2 text-[11px] text-fg/45">
           Based on liquid asset accounts (cash, checking, savings) and your
           scheduled transactions.
-          {drift !== 0 && (
+          {baseline?.hasEnoughData && (
             <>
               {" "}
               Layered with a baseline of{" "}
               <span className="font-semibold tabular-nums">
-                {formatCurrency(drift)}
+                {formatCurrency(baseline.drift)}
               </span>
-              /day from the last 90 days of non-scheduled activity.
-            </>
-          )}
-          {drift === 0 && days > 60 && (
-            <>
-              {" "}
-              No non-scheduled history yet; long-horizon line reflects only
-              scheduled events.
+              /day from {baseline.daysOfHistory} days of non-scheduled
+              activity ({baseline.txCount} transactions).
             </>
           )}
         </p>
