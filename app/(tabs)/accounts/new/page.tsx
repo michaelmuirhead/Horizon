@@ -15,7 +15,7 @@ import {
 } from "@/lib/accounts";
 
 // Liabilities are stored as negative balances; everything else as positive.
-const LIABILITIES: AccountType[] = ["credit-card", "loan"];
+const LIABILITIES: AccountType[] = ["credit-card", "loan", "bill"];
 
 export default function NewAccountPage() {
   const router = useRouter();

@@ -183,7 +183,7 @@ export default function DebtTermsCard({ account }: { account: Account }) {
     <section className="rounded-2xl bg-card p-5">
       <div className="flex items-baseline justify-between">
         <p className="text-xs font-medium uppercase tracking-wide text-fg/60">
-          Debt Terms
+          {account.type === "bill" ? "Bill Terms" : "Debt Terms"}
         </p>
         {(savedHint || scheduledHint) && (
           <span className="text-xs font-semibold text-emerald-400">
@@ -191,24 +191,35 @@ export default function DebtTermsCard({ account }: { account: Account }) {
           </span>
         )}
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-3">
-        <label htmlFor={aprFieldId} className="flex flex-col gap-1">
-          <span className="text-xs text-fg/55">APR (%)</span>
-          <input
-            id={aprFieldId}
-            type="number"
-            inputMode="decimal"
-            step="0.01"
-            min="0"
-            placeholder="0.00"
-            value={apr}
-            onChange={(e) => setApr(e.target.value)}
-            onBlur={commit}
-            className="rounded-xl bg-card-elevated px-3 py-2 text-base font-semibold text-fg outline-none placeholder:text-fg/40 tabular-nums"
-          />
-        </label>
+      <div
+        className={`mt-3 grid gap-3 ${
+          account.type === "bill" ? "grid-cols-1" : "grid-cols-2"
+        }`}
+      >
+        {/* APR doesn't apply to bills — they're tracked obligations
+            without interest accrual. Hide the input entirely so the
+            user doesn't waste a tap discovering it doesn't matter. */}
+        {account.type !== "bill" && (
+          <label htmlFor={aprFieldId} className="flex flex-col gap-1">
+            <span className="text-xs text-fg/55">APR (%)</span>
+            <input
+              id={aprFieldId}
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              min="0"
+              placeholder="0.00"
+              value={apr}
+              onChange={(e) => setApr(e.target.value)}
+              onBlur={commit}
+              className="rounded-xl bg-card-elevated px-3 py-2 text-base font-semibold text-fg outline-none placeholder:text-fg/40 tabular-nums"
+            />
+          </label>
+        )}
         <label htmlFor={minFieldId} className="flex flex-col gap-1">
-          <span className="text-xs text-fg/55">Min. Payment</span>
+          <span className="text-xs text-fg/55">
+            {account.type === "bill" ? "Typical payment" : "Min. Payment"}
+          </span>
           <div className="flex items-center gap-1 rounded-xl bg-card-elevated px-3 py-2">
             <span className="text-fg/60">$</span>
             <input
