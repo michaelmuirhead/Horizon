@@ -11,6 +11,7 @@ import NoteEditor from "@/components/forms/NoteEditor";
 import LoanSummaryCard from "@/components/accounts/LoanSummaryCard";
 import InvestmentSummaryCard from "@/components/accounts/InvestmentSummaryCard";
 import DebtTermsCard from "@/components/accounts/DebtTermsCard";
+import AttachPhotoCard from "@/components/shared/AttachPhotoCard";
 import { useHorizonStore } from "@/components/store/HorizonStore";
 import {
   LIABILITY_ACCOUNT_TYPES,
@@ -32,6 +33,7 @@ export default function AccountDetailPage({
     transactions,
     reconciliations,
     setAccountNote,
+    setAccountPhoto,
     renameAccount,
     setAccountClosed,
     deleteAccount,
@@ -116,6 +118,14 @@ export default function AccountDetailPage({
 
         {LIABILITY_ACCOUNT_TYPES.has(account.type) && (
           <DebtTermsCard account={account} />
+        )}
+        {(account.type === "loan" || account.type === "bill") && (
+          <AttachPhotoCard
+            value={account.photoDataUrl}
+            onChange={(next) => setAccountPhoto(account.id, next)}
+            label={account.type === "loan" ? "Loan agreement" : "Bill statement"}
+            scopeId={account.id}
+          />
         )}
         {account.type === "loan" && <LoanSummaryCard account={account} />}
         {account.type === "investment" && <InvestmentSummaryCard account={account} />}

@@ -13,6 +13,7 @@ import {
 import SubpageHeader from "@/components/layout/SubpageHeader";
 import EditableText from "@/components/forms/EditableText";
 import NoteEditor from "@/components/forms/NoteEditor";
+import AttachPhotoCard from "@/components/shared/AttachPhotoCard";
 import { useHorizonStore } from "@/components/store/HorizonStore";
 import {
   daysUntilDue,
@@ -299,6 +300,17 @@ export default function SavingsGoalDetailPage({
             placeholder="Add a note about this goal"
           />
         </section>
+
+        <AttachPhotoCard
+          value={goal.photoDataUrl}
+          onChange={(next) =>
+            updateSavingsGoal(goal.id, {
+              photoDataUrl: next === null ? undefined : next,
+            })
+          }
+          label="Goal photo"
+          scopeId={goal.id}
+        />
 
         <section className="rounded-2xl bg-card p-4">
           <p className="text-xs font-medium uppercase tracking-wide text-fg/60">

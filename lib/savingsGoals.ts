@@ -37,6 +37,10 @@ export type SavingsGoal = {
   // can assign money to this goal from the Budget tab. Set automatically
   // when the goal is created and kept in sync on rename/delete.
   categoryId?: string;
+  // Optional photo attached to the goal — typically the thing they're
+  // saving for (bike, vacation, etc.). Stored inline as a data URL like
+  // Transaction.receiptDataUrl, downscaled client-side at upload.
+  photoDataUrl?: string;
 };
 
 // Display name and stable id we use when looking for or creating the

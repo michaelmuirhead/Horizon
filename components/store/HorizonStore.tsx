@@ -326,6 +326,8 @@ type Action =
   | { type: "reorder_group"; groupId: string; targetIndex: number }
   | { type: "reorder_category"; categoryId: string; targetIndex: number; destGroupId?: string }
   | { type: "set_account_note"; accountId: string; note: string }
+  // photo is a data URL; pass null to clear.
+  | { type: "set_account_photo"; accountId: string; photo: string | null }
   | {
       type: "set_account_debt_terms";
       accountId: string;
@@ -1163,6 +1165,25 @@ function coreReducer(state: State, action: Action): State {
         ),
       };
     }
+    case "set_account_photo": {
+      // Clears the field entirely on null so the persisted account
+      // doesn't carry an empty string around — same shape contract as
+      // set_account_note.
+      return {
+        ...state,
+        accounts: state.accounts.map((a) =>
+          a.id === action.accountId
+            ? action.photo === null || action.photo === ""
+              ? (() => {
+                  const { photoDataUrl: _drop, ...rest } = a;
+                  void _drop;
+                  return rest;
+                })()
+              : { ...a, photoDataUrl: action.photo }
+            : a,
+        ),
+      };
+    }
     case "set_account_debt_terms": {
       return {
         ...state,
@@ -1753,6 +1774,7 @@ type Ctx = {
     destGroupId?: string,
   ) => void;
   setAccountNote: (accountId: string, note: string) => void;
+  setAccountPhoto: (accountId: string, photo: string | null) => void;
   setAccountDebtTerms: (
     accountId: string,
     terms: {
@@ -2645,6 +2667,12 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
   const setAccountNote = useCallback((accountId: string, note: string) => {
     dispatch({ type: "set_account_note", accountId, note });
   }, []);
+  const setAccountPhoto = useCallback(
+    (accountId: string, photo: string | null) => {
+      dispatch({ type: "set_account_photo", accountId, photo });
+    },
+    [],
+  );
   const setAccountDebtTerms = useCallback(
     (
       accountId: string,
@@ -3359,6 +3387,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       reorderGroup,
       reorderCategory,
       setAccountNote,
+      setAccountPhoto,
       setAccountDebtTerms,
       addPlannerEntry,
       updatePlannerEntry,
@@ -3469,6 +3498,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       reorderGroup,
       reorderCategory,
       setAccountNote,
+      setAccountPhoto,
       setAccountDebtTerms,
       addPlannerEntry,
       updatePlannerEntry,
