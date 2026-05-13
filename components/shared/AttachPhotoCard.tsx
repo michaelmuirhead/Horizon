@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, type ChangeEvent } from "react";
-import { Camera, ImageIcon, X } from "lucide-react";
+import { Camera, FolderOpen, ImageIcon, X } from "lucide-react";
 import { resizeImageFile } from "@/lib/imageResize";
 
 type Props = {
@@ -25,10 +25,17 @@ type Props = {
 // downscale client-side via resizeImageFile, store as a data URL,
 // show inline with a remove button.
 //
-// Two pick paths: a Camera button (capture="environment", iOS opens
-// the rear camera directly) and a Library button (no capture, iOS
-// opens the photo picker). Browsers don't let one input toggle
-// capture dynamically, so each path needs its own <input>.
+// Three pick paths:
+//   • Camera   — capture="environment", iOS opens the rear camera.
+//   • Library  — accept="image/*", iOS opens the photo picker.
+//   • Files    — no accept attribute, iOS skips the photo action
+//                sheet and opens the Files app directly (iCloud
+//                Drive, On My iPhone, third-party providers).
+//
+// Browsers don't let one <input> toggle capture / accept
+// dynamically — each path needs its own element. The Files input
+// can yield a non-image (PDF, doc); resizeImageFile rejects that
+// and the existing catch leaves the current photo untouched.
 export default function AttachPhotoCard({
   value,
   onChange,
@@ -37,6 +44,7 @@ export default function AttachPhotoCard({
 }: Props) {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const libraryInputRef = useRef<HTMLInputElement>(null);
+  const filesInputRef = useRef<HTMLInputElement>(null);
 
   function handlePickedFrom(ref: React.RefObject<HTMLInputElement | null>) {
     return async (e: ChangeEvent<HTMLInputElement>) => {
@@ -46,7 +54,8 @@ export default function AttachPhotoCard({
         const dataUrl = await resizeImageFile(file);
         onChange(dataUrl);
       } catch {
-        // Image too large or unreadable — leave the existing photo alone.
+        // Image too large / unreadable (or a non-image picked via
+        // Files) — leave the existing photo alone.
       }
       if (ref.current) ref.current.value = "";
     };
@@ -54,6 +63,7 @@ export default function AttachPhotoCard({
 
   const cameraInputId = `photo-${scopeId}-camera`;
   const libraryInputId = `photo-${scopeId}-library`;
+  const filesInputId = `photo-${scopeId}-files`;
 
   return (
     <section className="rounded-2xl bg-card p-5">
@@ -101,6 +111,20 @@ export default function AttachPhotoCard({
             type="file"
             accept="image/*"
             onChange={handlePickedFrom(libraryInputRef)}
+            className="sr-only"
+          />
+          <label
+            htmlFor={filesInputId}
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-card-elevated px-3 py-1.5 text-xs font-bold text-fg/85"
+          >
+            <FolderOpen size={14} strokeWidth={2.4} />
+            Files
+          </label>
+          <input
+            id={filesInputId}
+            ref={filesInputRef}
+            type="file"
+            onChange={handlePickedFrom(filesInputRef)}
             className="sr-only"
           />
         </div>

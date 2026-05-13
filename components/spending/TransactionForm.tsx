@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import { Camera, ImageIcon, Plus, Trash2, X } from "lucide-react";
+import { Camera, FolderOpen, ImageIcon, Plus, Trash2, X } from "lucide-react";
 import FormGroup, { FormRow } from "@/components/forms/FormGroup";
 import TextInput from "@/components/forms/TextInput";
 import Select from "@/components/forms/Select";
@@ -112,12 +112,16 @@ export default function TransactionForm({
   const [receiptDataUrl, setReceiptDataUrl] = useState<string | undefined>(
     initial?.receiptDataUrl,
   );
-  // Two pick paths: camera (forces rear lens on iOS via
-  // capture="environment") and library (no capture, opens the photo
-  // picker). Browsers don't let one <input> toggle capture
-  // dynamically, so each needs its own ref / element.
+  // Three pick paths: camera (capture="environment"), photo library
+  // (accept="image/*"), and Files (no accept — iOS opens the Files
+  // app directly, skipping the photo action sheet). Browsers don't
+  // let one <input> toggle capture/accept dynamically, so each
+  // needs its own ref / element. The Files path can yield non-image
+  // files (PDFs, docs); resizeImageFile rejects those and the
+  // existing catch leaves the previous receipt untouched.
   const receiptCameraRef = useRef<HTMLInputElement>(null);
   const receiptLibraryRef = useRef<HTMLInputElement>(null);
+  const receiptFilesRef = useRef<HTMLInputElement>(null);
 
   function handleReceiptPickedFrom(
     ref: React.RefObject<HTMLInputElement | null>,
@@ -453,6 +457,20 @@ export default function TransactionForm({
               type="file"
               accept="image/*"
               onChange={handleReceiptPickedFrom(receiptLibraryRef)}
+              className="sr-only"
+            />
+            <label
+              htmlFor="receipt-input-files"
+              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-card-elevated px-3 py-1.5 text-xs font-bold text-fg/85"
+            >
+              <FolderOpen size={14} strokeWidth={2.4} />
+              Files
+            </label>
+            <input
+              id="receipt-input-files"
+              ref={receiptFilesRef}
+              type="file"
+              onChange={handleReceiptPickedFrom(receiptFilesRef)}
               className="sr-only"
             />
           </div>
