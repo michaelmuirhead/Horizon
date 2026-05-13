@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { ChevronRight, Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import PageTitle from "@/components/layout/PageTitle";
 import RowMenu from "@/components/planner/RowMenu";
@@ -37,6 +37,34 @@ export default function PlannerPage() {
     [plannerFolders],
   );
 
+  // TEMP DEBUG — track which folder the user just tapped + how the
+  // store sees the folder list right after. Remove once the iOS PWA
+  // tap-doesn't-navigate report is resolved.
+  const [debugLastTap, setDebugLastTap] = useState<string | null>(null);
+  const [debugLastTapAt, setDebugLastTapAt] = useState<string | null>(null);
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log("[planner debug] folders updated", {
+      count: plannerFolders.length,
+      ids: plannerFolders.map((f) => f.id),
+      lastTap: debugLastTap,
+    });
+  }, [plannerFolders, debugLastTap]);
+
+  function handleDebugFolderTap(folder: { id: string; name: string }) {
+    const stamp = new Date().toLocaleTimeString();
+    setDebugLastTap(`${folder.name} (${folder.id})`);
+    setDebugLastTapAt(stamp);
+    // eslint-disable-next-line no-console
+    console.log("[planner debug] tapped folder", {
+      tappedId: folder.id,
+      tappedName: folder.name,
+      href: `/planner/${folder.id}`,
+      visibleFolders: plannerFolders.map((f) => ({ id: f.id, name: f.name })),
+      at: stamp,
+    });
+  }
+
   function submitCreate(e: FormEvent) {
     e.preventDefault();
     const name = draftName.trim();
@@ -60,6 +88,36 @@ export default function PlannerPage() {
         <PageTitle>Planner</PageTitle>
         <p className="mt-1 text-sm text-fg/55">
           Group budgets into folders for trips, months, or projects.
+        </p>
+      </div>
+
+      {/* TEMP DEBUG banner — surfaces tap state so we can tell whether
+          the Link is firing on iOS PWA. Remove once resolved. */}
+      <div className="mx-4 mt-3 rounded-2xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-[11px] leading-snug text-amber-100">
+        <p className="font-bold uppercase tracking-wide text-amber-200">
+          Debug
+        </p>
+        <p className="mt-1">
+          Folders in store: <span className="font-mono">{plannerFolders.length}</span>
+          {plannerFolders.length > 0 && (
+            <>
+              {" "}
+              · ids:{" "}
+              <span className="font-mono break-all">
+                {plannerFolders.map((f) => f.id).join(", ")}
+              </span>
+            </>
+          )}
+        </p>
+        <p className="mt-1">
+          Last tapped:{" "}
+          {debugLastTap ? (
+            <span className="font-mono break-all">
+              {debugLastTap} @ {debugLastTapAt}
+            </span>
+          ) : (
+            <span className="text-amber-200/70">(none yet)</span>
+          )}
         </p>
       </div>
 
@@ -108,6 +166,7 @@ export default function PlannerPage() {
                 ) : (
                   <Link
                     href={`/planner/${folder.id}`}
+                    onClick={() => handleDebugFolderTap(folder)}
                     className="flex flex-1 items-center gap-3 py-3.5 min-w-0"
                   >
                     <span className="flex-1 min-w-0 truncate text-base font-bold">
