@@ -5,11 +5,11 @@ import SubpageHeader from "@/components/layout/SubpageHeader";
 import CashFlowChart from "@/components/charts/CashFlowChart";
 import Segmented from "@/components/reflect/Segmented";
 import { useHorizonStore } from "@/components/store/HorizonStore";
-import { projectCashFlow } from "@/lib/cashflow";
+import { baselineDailyDrift, projectCashFlow } from "@/lib/cashflow";
 import { todayIso } from "@/lib/scheduled";
 import { formatCurrency } from "@/lib/format";
 
-type Horizon = "14" | "30" | "60" | "90";
+type Horizon = "30" | "90" | "180" | "365";
 
 const longDateFmt = new Intl.DateTimeFormat("en-US", {
   weekday: "short",
@@ -32,12 +32,20 @@ export default function CashFlowProjectionPage() {
   const days = parseInt(horizon, 10);
 
   const today = todayIso();
+  // Only layer in the baseline drift on long horizons. Inside ~60 days
+  // the schedule + RTA assumptions dominate and adding drift overstates
+  // discretionary noise; past that, a flat line is unrealistic.
+  const drift =
+    days > 60
+      ? baselineDailyDrift(accounts, transactions, scheduledTransactions, today)
+      : 0;
   const projection = projectCashFlow(
     accounts,
     transactions,
     scheduledTransactions,
     days,
     today,
+    drift,
   );
   const change = projection.end - projection.start;
   const dipsBelowZero = projection.low.balance < 0;
@@ -52,10 +60,10 @@ export default function CashFlowProjectionPage() {
             value={horizon}
             onChange={setHorizon}
             options={[
-              { value: "14", label: "14d" },
               { value: "30", label: "30d" },
-              { value: "60", label: "60d" },
               { value: "90", label: "90d" },
+              { value: "180", label: "6mo" },
+              { value: "365", label: "1y" },
             ]}
           />
         </div>
@@ -126,8 +134,24 @@ export default function CashFlowProjectionPage() {
 
         <p className="px-2 text-[11px] text-fg/45">
           Based on liquid asset accounts (cash, checking, savings) and your
-          scheduled transactions only. Day-to-day spending isn&rsquo;t
-          forecast.
+          scheduled transactions.
+          {drift !== 0 && (
+            <>
+              {" "}
+              Layered with a baseline of{" "}
+              <span className="font-semibold tabular-nums">
+                {formatCurrency(drift)}
+              </span>
+              /day from the last 90 days of non-scheduled activity.
+            </>
+          )}
+          {drift === 0 && days > 60 && (
+            <>
+              {" "}
+              No non-scheduled history yet; long-horizon line reflects only
+              scheduled events.
+            </>
+          )}
         </p>
       </div>
     </>
