@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, type ChangeEvent } from "react";
-import { Camera, X } from "lucide-react";
+import { Camera, ImageIcon, X } from "lucide-react";
 import { resizeImageFile } from "@/lib/imageResize";
 
 type Props = {
@@ -24,27 +24,36 @@ type Props = {
 // being saved for). Mirrors the receipt UX on TransactionForm:
 // downscale client-side via resizeImageFile, store as a data URL,
 // show inline with a remove button.
+//
+// Two pick paths: a Camera button (capture="environment", iOS opens
+// the rear camera directly) and a Library button (no capture, iOS
+// opens the photo picker). Browsers don't let one input toggle
+// capture dynamically, so each path needs its own <input>.
 export default function AttachPhotoCard({
   value,
   onChange,
   label,
   scopeId,
 }: Props) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const libraryInputRef = useRef<HTMLInputElement>(null);
 
-  async function handlePicked(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const dataUrl = await resizeImageFile(file);
-      onChange(dataUrl);
-    } catch {
-      // Image too large or unreadable — leave the existing photo alone.
-    }
-    if (inputRef.current) inputRef.current.value = "";
+  function handlePickedFrom(ref: React.RefObject<HTMLInputElement | null>) {
+    return async (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const dataUrl = await resizeImageFile(file);
+        onChange(dataUrl);
+      } catch {
+        // Image too large or unreadable — leave the existing photo alone.
+      }
+      if (ref.current) ref.current.value = "";
+    };
   }
 
-  const inputId = `photo-${scopeId}`;
+  const cameraInputId = `photo-${scopeId}-camera`;
+  const libraryInputId = `photo-${scopeId}-library`;
 
   return (
     <section className="rounded-2xl bg-card p-5">
@@ -64,22 +73,34 @@ export default function AttachPhotoCard({
             </button>
           )}
           <label
-            htmlFor={inputId}
+            htmlFor={cameraInputId}
             className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-card-elevated px-3 py-1.5 text-xs font-bold text-fg/85"
           >
             <Camera size={14} strokeWidth={2.4} />
-            {value ? "Replace" : "Add photo"}
+            Camera
           </label>
-          {/* `capture="environment"` cues iOS to default the camera
-              roll picker to the rear camera. The user can still pick
-              an existing image from their library. */}
           <input
-            id={inputId}
-            ref={inputRef}
+            id={cameraInputId}
+            ref={cameraInputRef}
             type="file"
             accept="image/*"
             capture="environment"
-            onChange={handlePicked}
+            onChange={handlePickedFrom(cameraInputRef)}
+            className="sr-only"
+          />
+          <label
+            htmlFor={libraryInputId}
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-card-elevated px-3 py-1.5 text-xs font-bold text-fg/85"
+          >
+            <ImageIcon size={14} strokeWidth={2.4} />
+            Library
+          </label>
+          <input
+            id={libraryInputId}
+            ref={libraryInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handlePickedFrom(libraryInputRef)}
             className="sr-only"
           />
         </div>
