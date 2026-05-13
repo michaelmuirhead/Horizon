@@ -1,3 +1,5 @@
+"use client";
+
 import HomeHeader from "@/components/home/HomeHeader";
 import QuickAddSection from "@/components/home/QuickAddSection";
 import PinnedSection from "@/components/home/PinnedSection";
@@ -7,13 +9,35 @@ import BillsCalendarSection from "@/components/home/BillsCalendarSection";
 import UpcomingDebtsSection from "@/components/home/UpcomingDebtsSection";
 import FutureMonthsSection from "@/components/home/FutureMonthsSection";
 import WishlistSection from "@/components/home/WishlistSection";
+import WeeklyInsightsSection from "@/components/home/WeeklyInsightsSection";
+import { useHorizonStore } from "@/components/store/HorizonStore";
+import { resolveHomeLayout, type HomeSectionId } from "@/lib/homeLayout";
 
 const HOUSEHOLD = "Muirhead Family";
 
 export default function HomePage() {
+  const { settings } = useHorizonStore();
   const now = new Date();
   const monthFmt = new Intl.DateTimeFormat("en-US", { month: "long" });
   const currentMonth = monthFmt.format(now);
+
+  const layout = resolveHomeLayout(settings.homeSectionLayout);
+
+  // Section components keyed by id. Each section is responsible for
+  // its own "hide when empty" behavior (e.g. UpcomingDebtsSection
+  // returns null when there's nothing to show) — the layout's `hidden`
+  // flag is a user-driven override on top of that.
+  const sections: Record<HomeSectionId, React.ReactNode> = {
+    "quick-add": <QuickAddSection />,
+    pinned: <PinnedSection />,
+    goals: <GoalSection />,
+    "weekly-insights": <WeeklyInsightsSection />,
+    wishlist: <WishlistSection />,
+    "upcoming-debts": <UpcomingDebtsSection />,
+    "bills-calendar": <BillsCalendarSection />,
+    summary: <SummarySection month={currentMonth} />,
+    "future-months": <FutureMonthsSection />,
+  };
 
   return (
     <div className="relative">
@@ -31,14 +55,11 @@ export default function HomePage() {
       </div>
 
       <div className="relative flex flex-col gap-4 px-4 pb-6">
-        <QuickAddSection />
-        <PinnedSection />
-        <GoalSection />
-        <WishlistSection />
-        <UpcomingDebtsSection />
-        <BillsCalendarSection />
-        <SummarySection month={currentMonth} />
-        <FutureMonthsSection />
+        {layout.map((s) =>
+          s.hidden ? null : (
+            <div key={s.id}>{sections[s.id]}</div>
+          ),
+        )}
       </div>
     </div>
   );

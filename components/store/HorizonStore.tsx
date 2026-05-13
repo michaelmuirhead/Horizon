@@ -135,11 +135,24 @@ function writeBudgetsIndex(index: BudgetsIndex): void {
 
 export type ThemeName = "dark" | "light" | "pokemon" | "auto";
 
+export type HomeSectionPreference = {
+  // Stable id from HOME_SECTION_ORDER (see lib/homeLayout.ts).
+  id: string;
+  // Whether to render the section. Defaults to true on absent.
+  hidden?: boolean;
+};
+
 export type AppSettings = {
   currency: string;
   theme?: ThemeName;
   onboardingCompleted?: boolean;
   notificationsEnabled?: boolean;
+  // User-customized home tab. Each entry pins a section to a position
+  // and optional hidden flag. Sections not in the list fall back to the
+  // default order from lib/homeLayout, appended after the listed ones
+  // — so adding a new section (e.g. weekly-insights) on app upgrade
+  // doesn't vanish under a saved layout.
+  homeSectionLayout?: HomeSectionPreference[];
 };
 
 const defaultSettings: AppSettings = { currency: "USD", theme: "dark" };
