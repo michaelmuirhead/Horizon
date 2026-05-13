@@ -65,19 +65,18 @@ export const samplePlannerEntries: PlannerEntry[] = [];
 
 // ─── Pure helpers ───────────────────────────────────────────────────────
 
-// Sort entries by their stored order, falling back to date+id so the
-// running balance is deterministic even if order is missing on legacy
-// rows. Returns a new array.
+// Sort entries chronologically by date. The manual `order` field is a
+// tiebreaker between same-date rows — drag-reorder still rearranges
+// inside a date group, but it can no longer push an entry ahead of a
+// row dated earlier than itself. Undated entries sort to the very end.
 function sortEntriesForBudget(entries: PlannerEntry[]): PlannerEntry[] {
   return entries.slice().sort((a, b) => {
-    const ao = a.order ?? Number.MAX_SAFE_INTEGER;
-    const bo = b.order ?? Number.MAX_SAFE_INTEGER;
-    if (ao !== bo) return ao - bo;
-    // Undated entries land last among same-order rows so they don't
-    // disrupt a user-curated chronological flow.
     const ad = a.date ?? "9999-99-99";
     const bd = b.date ?? "9999-99-99";
     if (ad !== bd) return ad < bd ? -1 : 1;
+    const ao = a.order ?? Number.MAX_SAFE_INTEGER;
+    const bo = b.order ?? Number.MAX_SAFE_INTEGER;
+    if (ao !== bo) return ao - bo;
     return a.id < b.id ? -1 : 1;
   });
 }
