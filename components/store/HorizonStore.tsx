@@ -63,6 +63,11 @@ import {
   syncSavingsCategory,
   targetForSavingsGoal,
 } from "@/lib/savingsGoals";
+import {
+  ensureBillsGroupHasCategory,
+  removeBillCategoryFromGroups,
+  targetForBill,
+} from "@/lib/billsMirror";
 import { type TransactionTemplate, sampleTemplates } from "@/lib/templates";
 import {
   advanceDate,
@@ -626,6 +631,37 @@ function coreReducer(state: State, action: Action): State {
         ),
       };
     case "add_account": {
+      // Bills mirror into a budget category under the "Bills" group so
+      // the user can assign money to them on the Budget tab. The
+      // mirrored category's id is stamped onto the account as
+      // billCategoryId for cross-lookup; if the bill carries a
+      // minimumPayment a refill target is attached so the budget UI
+      // knows how much to fund each month.
+      if (action.account.type === "bill") {
+        const billCategoryId = makeId();
+        const billCategory: BudgetCategory = {
+          id: billCategoryId,
+          name: action.account.name,
+        };
+        const nextGroups = ensureBillsGroupHasCategory(
+          state.groups,
+          billCategory,
+        );
+        const target = targetForBill(action.account);
+        const nextTargets = target
+          ? { ...state.targets, [billCategoryId]: target }
+          : state.targets;
+        return {
+          ...state,
+          accounts: [
+            ...state.accounts,
+            { ...action.account, billCategoryId },
+          ],
+          groups: nextGroups,
+          targets: nextTargets,
+        };
+      }
+
       // Plain non-credit-card add: just push.
       if (action.account.type !== "credit-card") {
         return { ...state, accounts: [...state.accounts, action.account] };
@@ -672,6 +708,23 @@ function coreReducer(state: State, action: Action): State {
       if (!existing) return state;
       const oldName = existing.name;
       const ccCatId = existing.ccPaymentCategoryId;
+      const billCatId = existing.billCategoryId;
+      // Cascade the rename into both paired categories (CC + Bill). A
+      // single map pass handles either pointer; absent ids fall through
+      // untouched. Skipped when the rename is a no-op.
+      const groups =
+        oldName === action.name
+          ? state.groups
+          : state.groups.map((g) => ({
+              ...g,
+              categories: g.categories.map((c) => {
+                if (ccCatId && c.id === ccCatId)
+                  return { ...c, name: action.name };
+                if (billCatId && c.id === billCatId)
+                  return { ...c, name: action.name };
+                return c;
+              }),
+            }));
       return {
         ...state,
         accounts: state.accounts.map((a) =>
@@ -693,16 +746,7 @@ function coreReducer(state: State, action: Action): State {
                   };
                 return next ?? t;
               }),
-        // Keep the paired CC payment category labelled with the new card name.
-        groups:
-          ccCatId && oldName !== action.name
-            ? state.groups.map((g) => ({
-                ...g,
-                categories: g.categories.map((c) =>
-                  c.id === ccCatId ? { ...c, name: action.name } : c,
-                ),
-              }))
-            : state.groups,
+        groups,
       };
     }
     case "set_account_closed":
@@ -747,11 +791,29 @@ function coreReducer(state: State, action: Action): State {
             : a,
         ),
       };
-    case "delete_account":
+    case "delete_account": {
+      // If this was a bill account, also drop its mirrored Bills-group
+      // category and any target attached to it. Keeps the Budget tab
+      // from showing dangling rows for an account that's gone.
+      const removed = state.accounts.find((a) => a.id === action.accountId);
+      const billCatId = removed?.billCategoryId;
+      const groups = billCatId
+        ? removeBillCategoryFromGroups(state.groups, billCatId)
+        : state.groups;
+      const targets = billCatId
+        ? (() => {
+            const { [billCatId]: _drop, ...rest } = state.targets;
+            void _drop;
+            return rest;
+          })()
+        : state.targets;
       return {
         ...state,
         accounts: state.accounts.filter((a) => a.id !== action.accountId),
+        groups,
+        targets,
       };
+    }
     case "reconcile_account":
       return {
         ...state,
@@ -1208,59 +1270,92 @@ function coreReducer(state: State, action: Action): State {
       };
     }
     case "set_account_debt_terms": {
-      return {
-        ...state,
-        accounts: state.accounts.map((a) => {
-          if (a.id !== action.accountId) return a;
-          // Strip all five "debt terms" fields first so passing null
-          // for any of them clears it cleanly (rather than leaving a
-          // stale value in place).
-          const {
-            apr: _apr,
-            minimumPayment: _min,
-            paymentDueDayOfMonth: _due,
-            defaultFundingAccountId: _fund,
-            accountNumber: _num,
-            ...rest
-          } = a;
-          void _apr;
-          void _min;
-          void _due;
-          void _fund;
-          void _num;
-          const next: Account = { ...rest };
-          if (action.apr !== null && Number.isFinite(action.apr)) {
-            next.apr = action.apr;
-          }
-          if (
-            action.minimumPayment !== null &&
-            Number.isFinite(action.minimumPayment)
-          ) {
-            next.minimumPayment = action.minimumPayment;
-          }
-          if (
-            action.paymentDueDayOfMonth !== null &&
-            Number.isFinite(action.paymentDueDayOfMonth) &&
-            action.paymentDueDayOfMonth >= 1 &&
-            action.paymentDueDayOfMonth <= 31
-          ) {
-            next.paymentDueDayOfMonth = Math.floor(action.paymentDueDayOfMonth);
-          }
-          if (
-            action.defaultFundingAccountId !== null &&
-            action.defaultFundingAccountId.trim() !== ""
-          ) {
-            next.defaultFundingAccountId = action.defaultFundingAccountId;
-          }
-          if (
-            action.accountNumber !== null &&
-            action.accountNumber.trim() !== ""
-          ) {
-            next.accountNumber = action.accountNumber.trim();
-          }
-          return next;
-        }),
-      };
+      let updatedAccount: Account | null = null;
+      const accounts = state.accounts.map((a) => {
+        if (a.id !== action.accountId) return a;
+        // Strip all five "debt terms" fields first so passing null
+        // for any of them clears it cleanly (rather than leaving a
+        // stale value in place).
+        const {
+          apr: _apr,
+          minimumPayment: _min,
+          paymentDueDayOfMonth: _due,
+          defaultFundingAccountId: _fund,
+          accountNumber: _num,
+          ...rest
+        } = a;
+        void _apr;
+        void _min;
+        void _due;
+        void _fund;
+        void _num;
+        const next: Account = { ...rest };
+        if (action.apr !== null && Number.isFinite(action.apr)) {
+          next.apr = action.apr;
+        }
+        if (
+          action.minimumPayment !== null &&
+          Number.isFinite(action.minimumPayment)
+        ) {
+          next.minimumPayment = action.minimumPayment;
+        }
+        if (
+          action.paymentDueDayOfMonth !== null &&
+          Number.isFinite(action.paymentDueDayOfMonth) &&
+          action.paymentDueDayOfMonth >= 1 &&
+          action.paymentDueDayOfMonth <= 31
+        ) {
+          next.paymentDueDayOfMonth = Math.floor(action.paymentDueDayOfMonth);
+        }
+        if (
+          action.defaultFundingAccountId !== null &&
+          action.defaultFundingAccountId.trim() !== ""
+        ) {
+          next.defaultFundingAccountId = action.defaultFundingAccountId;
+        }
+        if (
+          action.accountNumber !== null &&
+          action.accountNumber.trim() !== ""
+        ) {
+          next.accountNumber = action.accountNumber.trim();
+        }
+        updatedAccount = next;
+        return next;
+      });
+      // For Bill accounts, sync the refill target on the mirrored
+      // budget category whenever min payment changes (including to
+      // "cleared"). When the account is a bill but doesn't yet have a
+      // billCategoryId — usually because it pre-dates this feature —
+      // we lazily create the mirror category here so existing bills
+      // pull themselves into Budget on the user's next save.
+      let targets = state.targets;
+      let groups = state.groups;
+      let finalAccounts = accounts;
+      if (updatedAccount && (updatedAccount as Account).type === "bill") {
+        let acc = updatedAccount as Account;
+        if (!acc.billCategoryId) {
+          const billCategoryId = makeId();
+          const billCategory: BudgetCategory = {
+            id: billCategoryId,
+            name: acc.name,
+          };
+          groups = ensureBillsGroupHasCategory(groups, billCategory);
+          acc = { ...acc, billCategoryId };
+          finalAccounts = accounts.map((a) =>
+            a.id === acc.id ? acc : a,
+          );
+        }
+        const billCatId = acc.billCategoryId as string;
+        const desired = targetForBill(acc);
+        if (desired) {
+          targets = { ...state.targets, [billCatId]: desired };
+        } else if (state.targets[billCatId]) {
+          const { [billCatId]: _drop, ...rest2 } = state.targets;
+          void _drop;
+          targets = rest2;
+        }
+      }
+      return { ...state, accounts: finalAccounts, groups, targets };
     }
     case "reorder_group": {
       const idx = state.groups.findIndex((g) => g.id === action.groupId);

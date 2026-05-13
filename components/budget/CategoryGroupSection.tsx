@@ -15,6 +15,7 @@ import {
   monthlyNeedForCategory,
 } from "@/lib/budget";
 import { formatCurrency } from "@/lib/format";
+import { ordinalDay } from "@/lib/debtDueDate";
 import EditableText from "@/components/forms/EditableText";
 import { useHorizonStore } from "@/components/store/HorizonStore";
 import {
@@ -320,12 +321,34 @@ export default function CategoryGroupSection({
           {group.categories.map((cat, i) => {
             const pinned = pinnedCategoryIds.includes(cat.id);
             const target = targets[cat.id];
-            const subtitle = targetSubtitle(cat, {
+            const baseSubtitle = targetSubtitle(cat, {
               targets,
               assignments,
               transactions,
               monthKey,
             });
+            // If this category mirrors a Bill account, append "due Nth"
+            // so the due-day is visible without leaving the Budget tab.
+            // Looking the bill up by billCategoryId rather than name
+            // keeps the link stable across renames.
+            const linkedBill = accounts.find(
+              (a) =>
+                a.type === "bill" &&
+                a.billCategoryId === cat.id &&
+                typeof a.paymentDueDayOfMonth === "number",
+            );
+            const subtitle = linkedBill
+              ? {
+                  text: baseSubtitle
+                    ? `${baseSubtitle.text} · due ${ordinalDay(
+                        linkedBill.paymentDueDayOfMonth as number,
+                      )}`
+                    : `Due ${ordinalDay(
+                        linkedBill.paymentDueDayOfMonth as number,
+                      )}`,
+                  underfunded: baseSubtitle?.underfunded ?? false,
+                }
+              : baseSubtitle;
             const targetHref = `/goal/new?category=${encodeURIComponent(cat.id)}`;
             const rowHighlighted =
               editMode &&
