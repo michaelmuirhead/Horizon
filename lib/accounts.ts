@@ -51,6 +51,10 @@ export type Account = {
   // payment for this debt. We resolve from id (not name) so renaming
   // the source account doesn't silently break the schedule.
   defaultFundingAccountId?: string;
+  // Free-form account number / reference ("4111…1111", "Loan #ABC-
+  // 0042"). Stored plaintext like every other field on Account; the
+  // UI masks it by default so it doesn't sit visible at a glance.
+  accountNumber?: string;
   // Investment account history of self-reported values. The most recent
   // entry's value is what `liveAccountBalance` returns when populated.
   // Net contributions (sum of transactions on this account) are tracked

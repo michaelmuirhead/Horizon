@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarClock, CheckCircle2, X } from "lucide-react";
+import { CalendarClock, CheckCircle2, Eye, EyeOff, X } from "lucide-react";
 import type { Account } from "@/lib/accounts";
 import { ASSET_ACCOUNT_TYPES } from "@/lib/accounts";
 import { useHorizonStore } from "@/components/store/HorizonStore";
@@ -86,6 +86,13 @@ export default function DebtTermsCard({ account }: { account: Account }) {
     [accounts, account.defaultFundingAccountId],
   );
   const [fundingId, setFundingId] = useState<string>(fundingDefault?.id ?? "");
+  const [accountNumber, setAccountNumber] = useState<string>(
+    account.accountNumber ?? "",
+  );
+  // Mask account number by default so it doesn't sit on screen during
+  // shoulder-surfing scenarios. The toggle reveals while editing /
+  // copying.
+  const [showAccountNumber, setShowAccountNumber] = useState(false);
   const [savedHint, setSavedHint] = useState(false);
   const [scheduledHint, setScheduledHint] = useState(false);
 
@@ -95,6 +102,8 @@ export default function DebtTermsCard({ account }: { account: Account }) {
     setMinPayment(toInputValue(account.minimumPayment));
     setDueDay(toInputValue(account.paymentDueDayOfMonth));
     setFundingId(fundingDefault?.id ?? "");
+    setAccountNumber(account.accountNumber ?? "");
+    setShowAccountNumber(false);
     // initialApr / fundingDefault are derived from the account + accounts
     // list above and don't need to be deps themselves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -110,11 +119,13 @@ export default function DebtTermsCard({ account }: { account: Account }) {
   }, [savedHint, scheduledHint]);
 
   function commit() {
+    const trimmedNumber = accountNumber.trim();
     setAccountDebtTerms(account.id, {
       apr: parseOptionalNumber(apr),
       minimumPayment: parseOptionalNumber(minPayment),
       paymentDueDayOfMonth: parseDueDay(dueDay),
       defaultFundingAccountId: fundingId === "" ? null : fundingId,
+      accountNumber: trimmedNumber === "" ? null : trimmedNumber,
     });
     setSavedHint(true);
   }
@@ -123,6 +134,7 @@ export default function DebtTermsCard({ account }: { account: Account }) {
   const minFieldId = `debt-min-${account.id}`;
   const dueFieldId = `debt-due-${account.id}`;
   const fundFieldId = `debt-fund-${account.id}`;
+  const numberFieldId = `debt-account-number-${account.id}`;
 
   const dueDayNum = parseDueDay(dueDay);
   const minNum = parseOptionalNumber(minPayment);
@@ -156,11 +168,13 @@ export default function DebtTermsCard({ account }: { account: Account }) {
     }
     // Persist the funding-account choice on the debt so the next
     // schedule (or schedule-after-delete) reuses it without prompting.
+    const trimmedNumber = accountNumber.trim();
     setAccountDebtTerms(account.id, {
       apr: parseOptionalNumber(apr),
       minimumPayment: minNum,
       paymentDueDayOfMonth: dueDayNum,
       defaultFundingAccountId: fundingAccount.id,
+      accountNumber: trimmedNumber === "" ? null : trimmedNumber,
     });
     addScheduled({
       kind: "transfer",
@@ -275,6 +289,45 @@ export default function DebtTermsCard({ account }: { account: Account }) {
                 </option>
               ))}
           </select>
+        </label>
+        <label
+          htmlFor={numberFieldId}
+          className="col-span-2 flex flex-col gap-1"
+        >
+          <span className="flex items-center justify-between text-xs text-fg/55">
+            <span>Account #</span>
+            {accountNumber !== "" && (
+              <button
+                type="button"
+                onClick={() => setShowAccountNumber((v) => !v)}
+                aria-label={
+                  showAccountNumber
+                    ? "Hide account number"
+                    : "Show account number"
+                }
+                aria-pressed={showAccountNumber}
+                className="grid h-6 w-6 place-items-center rounded-full text-fg/55 hover:text-fg/85"
+              >
+                {showAccountNumber ? (
+                  <EyeOff size={12} strokeWidth={2.4} />
+                ) : (
+                  <Eye size={12} strokeWidth={2.4} />
+                )}
+              </button>
+            )}
+          </span>
+          <input
+            id={numberFieldId}
+            type={showAccountNumber ? "text" : "password"}
+            inputMode="text"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="optional"
+            value={accountNumber}
+            onChange={(e) => setAccountNumber(e.target.value)}
+            onBlur={commit}
+            className="rounded-xl bg-card-elevated px-3 py-2 text-base font-semibold text-fg outline-none placeholder:text-fg/40 tabular-nums"
+          />
         </label>
       </div>
       {account.type === "loan" && account.loanApr !== undefined && (
