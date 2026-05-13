@@ -2476,12 +2476,16 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
 
   const addPlannerEntry = useCallback(
     (entry: Omit<PlannerEntry, "id" | "order">) => {
-      // New entries land at the end of their budget by default. If the
-      // new entry shares a date with any existing sibling, slot it just
-      // after the most recent (highest-order) same-date row instead so
-      // dated rows stay grouped chronologically. The reducer shifts any
-      // higher orders to make room. We read stateRef so the value stays
-      // current even though the callback identity is stable.
+      // Slot the new entry chronologically inside its budget:
+      //   • find the sibling with the latest date <= the new entry's date
+      //     (and among that group, the highest manual order), then insert
+      //     immediately after it;
+      //   • if the new entry pre-dates every dated sibling, insert at the
+      //     top;
+      //   • if the new entry has no date at all, fall back to the legacy
+      //     append-to-end behavior.
+      // The reducer shifts any higher orders to make room. We read
+      // stateRef so the callback identity stays stable.
       const siblings = stateRef.plannerEntries.filter(
         (e) => e.budgetId === entry.budgetId,
       );
@@ -2491,13 +2495,31 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       );
       let insertOrder = maxOrder + 1;
       if (entry.date) {
-        const sameDateMaxOrder = siblings.reduce((m, e) => {
-          if (e.date !== entry.date) return m;
+        let bestDate = "";
+        let bestOrder = -1;
+        for (const e of siblings) {
+          if (!e.date || e.date > entry.date) continue;
           const o = e.order ?? -1;
-          return o > m ? o : m;
-        }, -1);
-        if (sameDateMaxOrder >= 0) {
-          insertOrder = sameDateMaxOrder + 1;
+          if (
+            bestDate === "" ||
+            e.date > bestDate ||
+            (e.date === bestDate && o > bestOrder)
+          ) {
+            bestDate = e.date;
+            bestOrder = o;
+          }
+        }
+        if (bestDate !== "") {
+          insertOrder = bestOrder + 1;
+        } else if (siblings.length > 0) {
+          // Earlier than every dated sibling — put at the very top. The
+          // reducer's shift covers any colliding orders, including
+          // undated rows that sort to the end.
+          insertOrder = siblings.reduce(
+            (m, e) => Math.min(m, e.order ?? Number.MAX_SAFE_INTEGER),
+            Number.MAX_SAFE_INTEGER,
+          );
+          if (insertOrder === Number.MAX_SAFE_INTEGER) insertOrder = 0;
         }
       }
       dispatch({
