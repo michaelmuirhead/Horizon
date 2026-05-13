@@ -222,8 +222,8 @@ export default function SettingsPage() {
           </p>
           <p className="px-2 pt-2 text-xs text-fg/55 flex items-center gap-1">
             <Bell size={11} />
-            Notifications fire on app open for overspent categories and
-            by-date targets due in the next 7 days.
+            Notifications fire on app open for overspent categories,
+            by-date targets, and debt payments due in the next 7 days.
           </p>
         </section>
 

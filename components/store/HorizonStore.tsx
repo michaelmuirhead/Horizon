@@ -2126,6 +2126,56 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       });
     }
 
+    // Debt payments due within the next week. Dedup key carries the
+    // exact next-due date so the alert refreshes naturally each month
+    // (a different dueDate string → a different storage key → fresh
+    // 24h window).
+    for (const account of state.accounts) {
+      if (account.closed) continue;
+      if (typeof account.paymentDueDayOfMonth !== "number") continue;
+      const day = account.paymentDueDayOfMonth;
+      // Compute next due inline — small enough not to warrant importing
+      // the helper through the reducer module boundary, and we have
+      // `now` already.
+      const yr = now.getFullYear();
+      const mo = now.getMonth();
+      const lastOfThis = new Date(yr, mo + 1, 0).getDate();
+      const thisCand = Math.min(day, lastOfThis);
+      const thisCandTime = new Date(yr, mo, thisCand).setHours(0, 0, 0, 0);
+      const startOfToday = new Date(yr, mo, now.getDate()).setHours(
+        0,
+        0,
+        0,
+        0,
+      );
+      let dueTime: number;
+      if (thisCandTime >= startOfToday) {
+        dueTime = thisCandTime;
+      } else {
+        const lastOfNext = new Date(yr, mo + 2, 0).getDate();
+        dueTime = new Date(yr, mo + 1, Math.min(day, lastOfNext)).setHours(
+          0,
+          0,
+          0,
+          0,
+        );
+      }
+      const days = (dueTime - startOfToday) / (1000 * 60 * 60 * 24);
+      if (days < 0 || days > 7) continue;
+      const dueIsoForKey = new Date(dueTime).toISOString().slice(0, 10);
+      const phrase =
+        days === 0
+          ? "today"
+          : days === 1
+            ? "tomorrow"
+            : `in ${Math.round(days)} days`;
+      fired.push({
+        key: `debt-due:${account.id}:${dueIsoForKey}`,
+        title: "Debt payment due",
+        body: `${account.name} payment is due ${phrase}.`,
+      });
+    }
+
     // Spending alerts — fire once when a "spending" target crosses 80%
     // and once again at 100% in a given month. Dedup keys carry the month
     // so the alert fires fresh each new month.
