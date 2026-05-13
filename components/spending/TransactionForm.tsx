@@ -1,6 +1,12 @@
 "use client";
 
-import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from "react";
 import { Camera, FolderOpen, ImageIcon, Plus, Trash2, X } from "lucide-react";
 import FormGroup, { FormRow } from "@/components/forms/FormGroup";
 import TextInput from "@/components/forms/TextInput";
@@ -19,6 +25,12 @@ import {
 } from "@/lib/transactions";
 import { formatCurrency } from "@/lib/format";
 import { resizeImageFile } from "@/lib/imageResize";
+import {
+  PDF_SIZE_LIMIT_LABEL,
+  isPdfDataUrl,
+  isPdfTooLargeError,
+  readPdfAsDataUrl,
+} from "@/lib/attachmentRead";
 
 export type TransactionFormValues = Omit<Transaction, "id">;
 
@@ -116,12 +128,20 @@ export default function TransactionForm({
   // (accept="image/*"), and Files (no accept — iOS opens the Files
   // app directly, skipping the photo action sheet). Browsers don't
   // let one <input> toggle capture/accept dynamically, so each
-  // needs its own ref / element. The Files path can yield non-image
-  // files (PDFs, docs); resizeImageFile rejects those and the
-  // existing catch leaves the previous receipt untouched.
+  // needs its own ref / element. The Files path can yield PDFs or
+  // other non-image documents; PDFs route through readPdfAsDataUrl
+  // (capped to keep cloud-sync payloads under Firestore's 1MB doc
+  // limit) and unsupported types leave the existing receipt alone.
   const receiptCameraRef = useRef<HTMLInputElement>(null);
   const receiptLibraryRef = useRef<HTMLInputElement>(null);
   const receiptFilesRef = useRef<HTMLInputElement>(null);
+  const [receiptError, setReceiptError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!receiptError) return;
+    const t = window.setTimeout(() => setReceiptError(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [receiptError]);
 
   function handleReceiptPickedFrom(
     ref: React.RefObject<HTMLInputElement | null>,
@@ -129,11 +149,22 @@ export default function TransactionForm({
     return async (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
+      setReceiptError(null);
       try {
-        const dataUrl = await resizeImageFile(file);
-        setReceiptDataUrl(dataUrl);
-      } catch {
-        // Image too large or unreadable — leave the existing receipt alone.
+        if (file.type === "application/pdf") {
+          const dataUrl = await readPdfAsDataUrl(file);
+          setReceiptDataUrl(dataUrl);
+        } else {
+          const dataUrl = await resizeImageFile(file);
+          setReceiptDataUrl(dataUrl);
+        }
+      } catch (err) {
+        if (isPdfTooLargeError(err)) {
+          setReceiptError(
+            `PDF is too large — keep it under ${PDF_SIZE_LIMIT_LABEL}.`,
+          );
+        }
+        // Other errors silently leave the existing receipt alone.
       }
       if (ref.current) ref.current.value = "";
     };
@@ -475,14 +506,37 @@ export default function TransactionForm({
             />
           </div>
         </FormRow>
+        {receiptError && (
+          <p className="px-4 text-xs font-semibold text-rose-300">
+            {receiptError}
+          </p>
+        )}
         {receiptDataUrl && (
           <div className="px-4 pb-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={receiptDataUrl}
-              alt="Receipt"
-              className="block max-h-72 w-full rounded-xl object-contain bg-card-elevated"
-            />
+            {isPdfDataUrl(receiptDataUrl) ? (
+              <div className="overflow-hidden rounded-xl bg-card-elevated">
+                <iframe
+                  src={receiptDataUrl}
+                  title="Receipt"
+                  className="block h-72 w-full"
+                />
+                <a
+                  href={receiptDataUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block px-3 py-2 text-center text-xs font-bold text-accent"
+                >
+                  Open PDF in new tab
+                </a>
+              </div>
+            ) : (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={receiptDataUrl}
+                alt="Receipt"
+                className="block max-h-72 w-full rounded-xl object-contain bg-card-elevated"
+              />
+            )}
           </div>
         )}
 
