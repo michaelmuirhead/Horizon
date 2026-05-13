@@ -63,11 +63,31 @@ export default function ManageCategoriesPage() {
 
   function dropOnGroup(targetGroupId: string) {
     return (e: DragEvent<HTMLElement>) => {
-      if (!drag || drag.kind !== "group") return;
+      if (!drag) return;
       e.preventDefault();
-      const targetIndex = groups.findIndex((g) => g.id === targetGroupId);
-      if (targetIndex >= 0 && drag.id !== targetGroupId) {
-        reorderGroup(drag.id, targetIndex);
+      if (drag.kind === "group") {
+        const targetIndex = groups.findIndex((g) => g.id === targetGroupId);
+        if (targetIndex >= 0 && drag.id !== targetGroupId) {
+          reorderGroup(drag.id, targetIndex);
+        }
+      } else {
+        // Dropping a category onto a group's outer card (not on one of
+        // its rows) appends the category to the end of that group —
+        // useful for moving a category to an empty group or past the
+        // last row.
+        const ownerGroup = groups.find((g) =>
+          g.categories.some((c) => c.id === drag.id),
+        );
+        const destGroup = groups.find((g) => g.id === targetGroupId);
+        if (!ownerGroup || !destGroup) {
+          endDrag();
+          return;
+        }
+        if (ownerGroup.id === targetGroupId) {
+          endDrag();
+          return;
+        }
+        reorderCategory(drag.id, destGroup.categories.length, targetGroupId);
       }
       endDrag();
     };
@@ -76,21 +96,26 @@ export default function ManageCategoriesPage() {
   function dropOnCategory(targetGroupId: string, targetCategoryId: string) {
     return (e: DragEvent<HTMLElement>) => {
       if (!drag || drag.kind !== "category") return;
-      // Only drops within the same group are honored — cross-group moves
-      // aren't supported yet.
+      e.preventDefault();
       const ownerGroup = groups.find((g) =>
         g.categories.some((c) => c.id === drag.id),
       );
-      if (!ownerGroup || ownerGroup.id !== targetGroupId) {
+      const destGroup = groups.find((g) => g.id === targetGroupId);
+      if (!ownerGroup || !destGroup) {
         endDrag();
         return;
       }
-      e.preventDefault();
-      const targetIndex = ownerGroup.categories.findIndex(
+      const targetIndex = destGroup.categories.findIndex(
         (c) => c.id === targetCategoryId,
       );
-      if (targetIndex >= 0 && drag.id !== targetCategoryId) {
+      if (targetIndex < 0 || drag.id === targetCategoryId) {
+        endDrag();
+        return;
+      }
+      if (ownerGroup.id === targetGroupId) {
         reorderCategory(drag.id, targetIndex);
+      } else {
+        reorderCategory(drag.id, targetIndex, targetGroupId);
       }
       endDrag();
     };
@@ -182,7 +207,14 @@ export default function ManageCategoriesPage() {
           <section
             key={g.id}
             className={`rounded-2xl bg-card p-4 transition-colors ${
-              drag?.kind === "group" && dragOverId === g.id
+              drag &&
+              dragOverId === g.id &&
+              // Highlight when:
+              //   • dragging a group onto another group (reorder)
+              //   • dragging a category over a DIFFERENT group's card
+              //     (cross-group move to the end of that group)
+              (drag.kind === "group" ||
+                !g.categories.some((c) => c.id === drag.id))
                 ? "ring-2 ring-accent/60"
                 : ""
             }`}
