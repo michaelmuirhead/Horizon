@@ -7,12 +7,21 @@ import {
   type ChangeEvent,
   type FormEvent,
 } from "react";
-import { Camera, FolderOpen, ImageIcon, Plus, Trash2, X } from "lucide-react";
+import {
+  Camera,
+  FolderOpen,
+  ImageIcon,
+  Loader2,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import FormGroup, { FormRow } from "@/components/forms/FormGroup";
 import TextInput from "@/components/forms/TextInput";
 import Select from "@/components/forms/Select";
 import SegmentedField from "@/components/forms/SegmentedField";
 import SaveButton from "@/components/forms/SaveButton";
+import { useAuth } from "@/components/auth/AuthContext";
 import { useHorizonStore } from "@/components/store/HorizonStore";
 import { allCategoryNames, READY_TO_ASSIGN_CATEGORY } from "@/lib/budget";
 import {
@@ -31,6 +40,11 @@ import {
   isPdfTooLargeError,
   readPdfAsDataUrl,
 } from "@/lib/attachmentRead";
+import {
+  deleteAttachment,
+  isStorageUrl,
+  uploadAttachment,
+} from "@/lib/cloudStorage";
 
 export type TransactionFormValues = Omit<Transaction, "id">;
 
@@ -87,6 +101,7 @@ export default function TransactionForm({
 }: Props) {
   const { accounts: allAccounts, transactions: existingTxs } =
     useHorizonStore();
+  const { user } = useAuth();
   // Closed accounts disappear from the picker, but stay available if the
   // transaction being edited still references one.
   const accounts = allAccounts.filter(
@@ -124,18 +139,23 @@ export default function TransactionForm({
   const [receiptDataUrl, setReceiptDataUrl] = useState<string | undefined>(
     initial?.receiptDataUrl,
   );
+  const [receiptStoragePath, setReceiptStoragePath] = useState<
+    string | undefined
+  >(initial?.receiptStoragePath);
   // Three pick paths: camera (capture="environment"), photo library
   // (accept="image/*"), and Files (no accept — iOS opens the Files
   // app directly, skipping the photo action sheet). Browsers don't
   // let one <input> toggle capture/accept dynamically, so each
   // needs its own ref / element. The Files path can yield PDFs or
-  // other non-image documents; PDFs route through readPdfAsDataUrl
-  // (capped to keep cloud-sync payloads under Firestore's 1MB doc
-  // limit) and unsupported types leave the existing receipt alone.
+  // other documents; PDFs route through readPdfAsDataUrl for size
+  // checking, then upload to Firebase Storage when the user is
+  // signed in so the budget Firestore doc stays small. Unsupported
+  // types leave the existing receipt alone.
   const receiptCameraRef = useRef<HTMLInputElement>(null);
   const receiptLibraryRef = useRef<HTMLInputElement>(null);
   const receiptFilesRef = useRef<HTMLInputElement>(null);
   const [receiptError, setReceiptError] = useState<string | null>(null);
+  const [receiptUploading, setReceiptUploading] = useState(false);
 
   useEffect(() => {
     if (!receiptError) return;
@@ -143,31 +163,71 @@ export default function TransactionForm({
     return () => window.clearTimeout(t);
   }, [receiptError]);
 
+  // Scope id for the Storage path. Uses the existing transaction id
+  // on edit; for the new-transaction form we don't have one yet, so
+  // a short-lived ref provides a stable prefix that survives
+  // re-renders while the user fills out the form.
+  const newTxScopeRef = useRef<string>(`tx-${Math.random().toString(36).slice(2, 10)}`);
+  const receiptScopeId = initial?.id ?? newTxScopeRef.current;
+
+  // Fire-and-forget cleanup of the previously-stored object on
+  // replace / remove. Storage deletes are best-effort — a failure
+  // just leaves an orphan, never blocks the user.
+  function cleanupPrevReceipt() {
+    if (receiptStoragePath) void deleteAttachment(receiptStoragePath);
+  }
+
+  async function commitReceiptFromFile(file: File) {
+    setReceiptError(null);
+    setReceiptUploading(true);
+    try {
+      const isPdf = file.type === "application/pdf";
+      const processedDataUrl = isPdf
+        ? await readPdfAsDataUrl(file)
+        : await resizeImageFile(file);
+
+      if (user) {
+        try {
+          const blob = await dataUrlToBlob(processedDataUrl);
+          const stored = await uploadAttachment(user.uid, blob, receiptScopeId);
+          cleanupPrevReceipt();
+          setReceiptDataUrl(stored.url);
+          setReceiptStoragePath(stored.path);
+          return;
+        } catch {
+          // Fall through to inline below.
+        }
+      }
+      cleanupPrevReceipt();
+      setReceiptDataUrl(processedDataUrl);
+      setReceiptStoragePath(undefined);
+    } catch (err) {
+      if (isPdfTooLargeError(err)) {
+        setReceiptError(
+          `PDF is too large — keep it under ${PDF_SIZE_LIMIT_LABEL}.`,
+        );
+      }
+      // Other errors silently leave the existing receipt alone.
+    } finally {
+      setReceiptUploading(false);
+    }
+  }
+
   function handleReceiptPickedFrom(
     ref: React.RefObject<HTMLInputElement | null>,
   ) {
     return async (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if (!file) return;
-      setReceiptError(null);
-      try {
-        if (file.type === "application/pdf") {
-          const dataUrl = await readPdfAsDataUrl(file);
-          setReceiptDataUrl(dataUrl);
-        } else {
-          const dataUrl = await resizeImageFile(file);
-          setReceiptDataUrl(dataUrl);
-        }
-      } catch (err) {
-        if (isPdfTooLargeError(err)) {
-          setReceiptError(
-            `PDF is too large — keep it under ${PDF_SIZE_LIMIT_LABEL}.`,
-          );
-        }
-        // Other errors silently leave the existing receipt alone.
-      }
       if (ref.current) ref.current.value = "";
+      if (!file) return;
+      await commitReceiptFromFile(file);
     };
+  }
+
+  function handleReceiptRemove() {
+    cleanupPrevReceipt();
+    setReceiptDataUrl(undefined);
+    setReceiptStoragePath(undefined);
   }
   // Track whether the user has explicitly picked a category. Auto-suggest from
   // payee history when they haven't, but never overwrite a deliberate choice.
@@ -241,6 +301,7 @@ export default function TransactionForm({
         splits: splitItems,
         tags: normalizedTags,
         receiptDataUrl,
+        receiptStoragePath,
       });
       return;
     }
@@ -259,6 +320,7 @@ export default function TransactionForm({
         memo: memo.trim() || undefined,
         tags: normalizedTags,
         receiptDataUrl,
+        receiptStoragePath,
       });
       return;
     }
@@ -449,10 +511,13 @@ export default function TransactionForm({
 
         <FormRow label="Receipt">
           <div className="flex items-center justify-end gap-2">
-            {receiptDataUrl && (
+            {receiptUploading && (
+              <Loader2 size={14} className="animate-spin text-fg/55" />
+            )}
+            {receiptDataUrl && !receiptUploading && (
               <button
                 type="button"
-                onClick={() => setReceiptDataUrl(undefined)}
+                onClick={handleReceiptRemove}
                 aria-label="Remove receipt"
                 className="grid h-7 w-7 place-items-center rounded-full bg-card-elevated text-fg/70"
               >
@@ -629,4 +694,12 @@ export default function TransactionForm({
       )}
     </form>
   );
+}
+
+// Convert a data URL back into a Blob we can hand to uploadBytes.
+// Mirrors the helper in AttachPhotoCard — small enough to inline
+// in both call sites rather than create a one-function shared module.
+async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
+  const res = await fetch(dataUrl);
+  return res.blob();
 }

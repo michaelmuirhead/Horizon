@@ -326,8 +326,17 @@ type Action =
   | { type: "reorder_group"; groupId: string; targetIndex: number }
   | { type: "reorder_category"; categoryId: string; targetIndex: number; destGroupId?: string }
   | { type: "set_account_note"; accountId: string; note: string }
-  // photo is a data URL; pass null to clear.
-  | { type: "set_account_photo"; accountId: string; photo: string | null }
+  // photo is either a data URL (legacy / local) or an https Storage
+  // download URL; null clears the attachment. storagePath is the
+  // Firebase Storage object path the UI needs to clean up on replace
+  // or remove — pass null when clearing or when the value is an
+  // inline data URL with nothing to delete.
+  | {
+      type: "set_account_photo";
+      accountId: string;
+      photo: string | null;
+      storagePath: string | null;
+    }
   | {
       type: "set_account_debt_terms";
       accountId: string;
@@ -1166,22 +1175,35 @@ function coreReducer(state: State, action: Action): State {
       };
     }
     case "set_account_photo": {
-      // Clears the field entirely on null so the persisted account
-      // doesn't carry an empty string around — same shape contract as
-      // set_account_note.
+      // Clears both fields entirely on null so the persisted account
+      // doesn't carry empty strings around — same shape contract as
+      // set_account_note. When a new value is provided, photoDataUrl
+      // holds the URL the UI consumes and photoStoragePath holds the
+      // Firebase Storage path (omitted for legacy inline data URLs).
       return {
         ...state,
-        accounts: state.accounts.map((a) =>
-          a.id === action.accountId
-            ? action.photo === null || action.photo === ""
-              ? (() => {
-                  const { photoDataUrl: _drop, ...rest } = a;
-                  void _drop;
-                  return rest;
-                })()
-              : { ...a, photoDataUrl: action.photo }
-            : a,
-        ),
+        accounts: state.accounts.map((a) => {
+          if (a.id !== action.accountId) return a;
+          if (action.photo === null || action.photo === "") {
+            const {
+              photoDataUrl: _drop,
+              photoStoragePath: _dropPath,
+              ...rest
+            } = a;
+            void _drop;
+            void _dropPath;
+            return rest;
+          }
+          const next: typeof a = { ...a, photoDataUrl: action.photo };
+          if (action.storagePath) {
+            next.photoStoragePath = action.storagePath;
+          } else {
+            const { photoStoragePath: _drop, ...withoutPath } = next;
+            void _drop;
+            return withoutPath;
+          }
+          return next;
+        }),
       };
     }
     case "set_account_debt_terms": {
@@ -1774,7 +1796,14 @@ type Ctx = {
     destGroupId?: string,
   ) => void;
   setAccountNote: (accountId: string, note: string) => void;
-  setAccountPhoto: (accountId: string, photo: string | null) => void;
+  // photo: data URL or https Storage URL, null to clear.
+  // storagePath: Firebase Storage object path (for cleanup on remove
+  // / replace); pass null for legacy inline data URLs.
+  setAccountPhoto: (
+    accountId: string,
+    photo: string | null,
+    storagePath: string | null,
+  ) => void;
   setAccountDebtTerms: (
     accountId: string,
     terms: {
@@ -2668,8 +2697,17 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "set_account_note", accountId, note });
   }, []);
   const setAccountPhoto = useCallback(
-    (accountId: string, photo: string | null) => {
-      dispatch({ type: "set_account_photo", accountId, photo });
+    (
+      accountId: string,
+      photo: string | null,
+      storagePath: string | null,
+    ) => {
+      dispatch({
+        type: "set_account_photo",
+        accountId,
+        photo,
+        storagePath,
+      });
     },
     [],
   );

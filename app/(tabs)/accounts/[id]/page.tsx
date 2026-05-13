@@ -122,7 +122,10 @@ export default function AccountDetailPage({
         {(account.type === "loan" || account.type === "bill") && (
           <AttachPhotoCard
             value={account.photoDataUrl}
-            onChange={(next) => setAccountPhoto(account.id, next)}
+            storagePath={account.photoStoragePath}
+            onChange={(next, storagePath) =>
+              setAccountPhoto(account.id, next, storagePath)
+            }
             label={account.type === "loan" ? "Loan agreement" : "Bill statement"}
             scopeId={account.id}
           />
