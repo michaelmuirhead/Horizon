@@ -56,6 +56,11 @@ export type Account = {
   // Net contributions (sum of transactions on this account) are tracked
   // separately so we can compute gain/loss = currentValue - contributions.
   investmentValuations?: InvestmentValuation[];
+  // Optional photo attached to the account itself — typically the loan
+  // agreement / bill statement / contract. Stored inline as a data URL
+  // (image/* MIME) like Transaction.receiptDataUrl, downscaled
+  // client-side at upload to keep localStorage from blowing up.
+  photoDataUrl?: string;
 };
 
 export const CC_PAYMENTS_GROUP_NAME = "Credit Card Payments";
