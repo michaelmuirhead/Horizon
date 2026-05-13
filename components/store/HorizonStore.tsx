@@ -133,7 +133,7 @@ function writeBudgetsIndex(index: BudgetsIndex): void {
   }
 }
 
-export type ThemeName = "dark" | "light" | "pokemon" | "auto";
+export type ThemeName = "dark" | "light" | "pokemon" | "pipboy" | "auto";
 
 export type HomeSectionPreference = {
   // Stable id from HOME_SECTION_ORDER (see lib/homeLayout.ts).

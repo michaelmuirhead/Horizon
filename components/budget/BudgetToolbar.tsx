@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
-  MoreHorizontal,
+  Pencil,
   Target,
   Wand2,
 } from "lucide-react";
@@ -14,6 +15,10 @@ type Props = {
   monthKey: string;
   onPrev: () => void;
   onNext: () => void;
+  // Inline edit mode on the budget tab: drag, rename, add, delete
+  // categories without navigating to /budget/manage.
+  editMode: boolean;
+  onToggleEdit: () => void;
 };
 
 export default function BudgetToolbar({
@@ -21,6 +26,8 @@ export default function BudgetToolbar({
   monthKey,
   onPrev,
   onNext,
+  editMode,
+  onToggleEdit,
 }: Props) {
   return (
     <div className="flex items-center justify-between gap-3 px-4 pt-[max(env(safe-area-inset-top),12px)] pb-3">
@@ -64,13 +71,21 @@ export default function BudgetToolbar({
         </button>
       </div>
 
-      <Link
-        href="/budget/manage"
-        aria-label="Manage categories"
-        className="hz-capsule grid h-10 w-10 place-items-center rounded-full"
+      <button
+        type="button"
+        onClick={onToggleEdit}
+        aria-label={editMode ? "Finish editing" : "Edit categories"}
+        aria-pressed={editMode}
+        className={`hz-capsule grid h-10 w-10 place-items-center rounded-full transition-colors ${
+          editMode ? "bg-accent text-page" : ""
+        }`}
       >
-        <MoreHorizontal size={20} strokeWidth={2.5} />
-      </Link>
+        {editMode ? (
+          <Check size={20} strokeWidth={2.5} />
+        ) : (
+          <Pencil size={18} strokeWidth={2.5} />
+        )}
+      </button>
     </div>
   );
 }

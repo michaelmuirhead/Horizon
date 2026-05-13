@@ -30,6 +30,7 @@ const THEMES: { value: ThemeName; label: string; tagline: string }[] = [
   { value: "dark", label: "Midnight", tagline: "Deep indigo (default)" },
   { value: "light", label: "Daylight", tagline: "Crisp light surfaces" },
   { value: "pokemon", label: "Pokémon", tagline: "Pokéball red on Poké blue" },
+  { value: "pipboy", label: "Pip-Boy", tagline: "Phosphor green CRT terminal" },
 ];
 
 const SUPPORTED_CURRENCIES = [
