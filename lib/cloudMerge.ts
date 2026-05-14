@@ -38,6 +38,10 @@ type StatePayload = {
   templates?: IdItem[];
   settings?: unknown;
   lastModifiedAt?: number;
+  // id → deletedAt epoch ms. Tombstones are how we tell "I never had
+  // this" from "I deleted this" across devices: union-by-id alone
+  // would resurrect anything a stale device still has cached.
+  tombstones?: Record<string, number>;
 };
 
 // Pick the side that should win when both have the same id-keyed entry.
@@ -154,6 +158,35 @@ function unionGroups<
   return out;
 }
 
+// Merge two tombstone maps, keeping the larger (newer) deletedAt for
+// any id present on both sides. Equivalent to a Last-Writer-Wins
+// register per id, which is what we want — once an entry is tombstoned,
+// every device should converge on the freshest deletion stamp.
+function mergeTombstones(
+  local: Record<string, number> | undefined,
+  remote: Record<string, number> | undefined,
+): Record<string, number> {
+  const out: Record<string, number> = { ...(remote ?? {}) };
+  for (const [id, stamp] of Object.entries(local ?? {})) {
+    const existing = out[id];
+    if (existing === undefined || stamp > existing) {
+      out[id] = stamp;
+    }
+  }
+  return out;
+}
+
+// Drop any item whose id is in the merged tombstones map. Used to
+// suppress resurrection: if a stale device still has a deleted entry
+// cached, the tombstone wins and the entry is filtered out of the
+// merged collection.
+function filterTombstoned<T extends IdItem>(
+  items: T[],
+  tombstones: Record<string, number>,
+): T[] {
+  return items.filter((it) => !(it.id in tombstones));
+}
+
 export function mergePayloads(
   local: StatePayload,
   remote: StatePayload,
@@ -162,10 +195,26 @@ export function mergePayloads(
   const remoteStamp = remote.lastModifiedAt ?? 0;
   const winner: "local" | "remote" =
     localStamp >= remoteStamp ? "local" : "remote";
+  const tombstones = mergeTombstones(local.tombstones, remote.tombstones);
   return {
-    transactions: unionById(local.transactions, remote.transactions, winner),
-    accounts: unionById(local.accounts, remote.accounts, winner),
-    groups: unionGroups(local.groups, remote.groups, winner),
+    transactions: filterTombstoned(
+      unionById(local.transactions, remote.transactions, winner),
+      tombstones,
+    ),
+    accounts: filterTombstoned(
+      unionById(local.accounts, remote.accounts, winner),
+      tombstones,
+    ),
+    // Groups need both layers filtered: the group id itself, and
+    // each group's inner categories.
+    groups: unionGroups(local.groups, remote.groups, winner)
+      .filter((g) => !(g.id in tombstones))
+      .map((g) => ({
+        ...g,
+        categories: g.categories
+          ? filterTombstoned(g.categories, tombstones)
+          : g.categories,
+      })),
     assignments: unionAssignments(
       local.assignments,
       remote.assignments,
@@ -174,39 +223,68 @@ export function mergePayloads(
     pinnedCategoryIds: unionStringSet(
       local.pinnedCategoryIds,
       remote.pinnedCategoryIds,
+    ).filter((id) => !(id in tombstones)),
+    targets: stripTombstonedKeys(
+      unionRecord(local.targets, remote.targets, winner),
+      tombstones,
     ),
-    targets: unionRecord(local.targets, remote.targets, winner),
-    plannerFolders: unionById(
-      local.plannerFolders,
-      remote.plannerFolders,
-      winner,
+    plannerFolders: filterTombstoned(
+      unionById(local.plannerFolders, remote.plannerFolders, winner),
+      tombstones,
     ),
-    plannerBudgets: unionById(
-      local.plannerBudgets,
-      remote.plannerBudgets,
-      winner,
+    plannerBudgets: filterTombstoned(
+      unionById(local.plannerBudgets, remote.plannerBudgets, winner),
+      tombstones,
     ),
-    plannerEntries: unionById(
-      local.plannerEntries,
-      remote.plannerEntries,
-      winner,
+    plannerEntries: filterTombstoned(
+      unionById(local.plannerEntries, remote.plannerEntries, winner),
+      tombstones,
     ),
-    scheduledTransactions: unionById(
-      local.scheduledTransactions,
-      remote.scheduledTransactions,
-      winner,
+    scheduledTransactions: filterTombstoned(
+      unionById(
+        local.scheduledTransactions,
+        remote.scheduledTransactions,
+        winner,
+      ),
+      tombstones,
     ),
-    reconciliations: unionById(
-      local.reconciliations,
-      remote.reconciliations,
-      winner,
+    reconciliations: filterTombstoned(
+      unionById(local.reconciliations, remote.reconciliations, winner),
+      tombstones,
     ),
     monthNotes: unionRecord(local.monthNotes, remote.monthNotes, winner),
-    rules: unionById(local.rules, remote.rules, winner),
-    wishlist: unionById(local.wishlist, remote.wishlist, winner),
-    savingsGoals: unionById(local.savingsGoals, remote.savingsGoals, winner),
-    templates: unionById(local.templates, remote.templates, winner),
+    rules: filterTombstoned(
+      unionById(local.rules, remote.rules, winner),
+      tombstones,
+    ),
+    wishlist: filterTombstoned(
+      unionById(local.wishlist, remote.wishlist, winner),
+      tombstones,
+    ),
+    savingsGoals: filterTombstoned(
+      unionById(local.savingsGoals, remote.savingsGoals, winner),
+      tombstones,
+    ),
+    templates: filterTombstoned(
+      unionById(local.templates, remote.templates, winner),
+      tombstones,
+    ),
     settings: winner === "local" ? local.settings : remote.settings,
+    tombstones,
     lastModifiedAt: Math.max(localStamp, remoteStamp),
   };
+}
+
+// Drop record entries whose key is tombstoned. Used for targets, which
+// is keyed by category id — if the category is gone, its target
+// should be too.
+function stripTombstonedKeys<V>(
+  record: Record<string, V>,
+  tombstones: Record<string, number>,
+): Record<string, V> {
+  const out: Record<string, V> = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (!(key in tombstones)) out[key] = value;
+  }
+  return out;
 }

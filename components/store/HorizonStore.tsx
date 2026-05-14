@@ -208,6 +208,14 @@ type State = {
   savingsGoals: SavingsGoal[];
   templates: TransactionTemplate[];
   settings: AppSettings;
+  // Ids of entities the user has deleted, keyed by id with a ms-epoch
+  // deletedAt stamp. Lets cloud-merge tell "I never had this" from
+  // "I deleted this" — without tombstones, a device coming back online
+  // would resurrect deleted items via the union-by-id merge in
+  // lib/cloudMerge. Tombstones older than ~90 days are GC'd on hydrate
+  // since the chance of an offline device older than that pushing back
+  // the dead entry approaches zero.
+  tombstones: Record<string, number>;
   // ms since epoch of the last user-driven mutation. Compared against the
   // cloud doc's updatedAt at sign-in to decide which side wins, instead of
   // prompting the user. Hydrate / restore / first-launch leave this alone
@@ -236,6 +244,7 @@ type Action =
       savingsGoals: SavingsGoal[];
       templates: TransactionTemplate[];
       settings: AppSettings;
+      tombstones: Record<string, number>;
       lastModifiedAt: number;
     }
   | { type: "add_transaction"; tx: Transaction }
@@ -411,6 +420,7 @@ const initialState: State = {
   savingsGoals: sampleSavingsGoals,
   templates: sampleTemplates,
   settings: defaultSettings,
+  tombstones: {},
   lastModifiedAt: 0,
   hydrated: false,
 };
@@ -425,6 +435,26 @@ const initialState: State = {
 // All three helpers are no-ops for already-migrated v2 payloads — they
 // only kick in when the new arrays are missing, so re-running them is
 // safe.
+
+// Tombstones older than this on hydrate are dropped. After three
+// months any offline device that still has the deleted entry is
+// either fixed by syncing or has lost it via local data wipe — the
+// chance of needing to suppress the entry from cloud-merge again
+// approaches zero, and unbounded tombstone growth would slowly bloat
+// the synced state document.
+const TOMBSTONE_GC_DAYS = 90;
+
+function parseStoredTombstones(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const cutoff = Date.now() - TOMBSTONE_GC_DAYS * 24 * 60 * 60 * 1000;
+  const out: Record<string, number> = {};
+  for (const [id, stamp] of Object.entries(raw)) {
+    if (typeof stamp !== "number" || !Number.isFinite(stamp)) continue;
+    if (stamp < cutoff) continue;
+    out[id] = stamp;
+  }
+  return out;
+}
 
 function migratePlannerFolders(
   legacyEntries: unknown,
@@ -519,6 +549,23 @@ function reducer(state: State, action: Action): State {
   return { ...next, lastModifiedAt: Date.now() };
 }
 
+// Adds one or more deleted ids to the tombstones map with the current
+// timestamp. cloudMerge applies tombstones as a filter on every
+// id-keyed collection, so once an id lands here, no device coming
+// back online can resurrect it via the union-merge. Called from every
+// delete_* reducer case.
+function recordTombstones(
+  existing: Record<string, number>,
+  ...ids: string[]
+): Record<string, number> {
+  const now = Date.now();
+  const next: Record<string, number> = { ...existing };
+  for (const id of ids) {
+    if (id) next[id] = now;
+  }
+  return next;
+}
+
 function coreReducer(state: State, action: Action): State {
   switch (action.type) {
     case "hydrate":
@@ -540,6 +587,7 @@ function coreReducer(state: State, action: Action): State {
         savingsGoals: action.savingsGoals,
         templates: action.templates,
         settings: action.settings,
+        tombstones: action.tombstones,
         lastModifiedAt: action.lastModifiedAt,
         hydrated: true,
       };
@@ -568,6 +616,7 @@ function coreReducer(state: State, action: Action): State {
       return {
         ...state,
         transactions: state.transactions.filter((t) => t.id !== action.id),
+        tombstones: recordTombstones(state.tombstones, action.id),
       };
     case "rename_payee": {
       const needle = action.oldName.toLowerCase();
@@ -610,13 +659,25 @@ function coreReducer(state: State, action: Action): State {
         transactions: [fromTx, toTx, ...state.transactions],
       };
     }
-    case "delete_transfer":
+    case "delete_transfer": {
+      // Tombstone every individual leg's transaction id so a stale
+      // device coming back online can't union them in. Also tombstone
+      // the shared transferId for good measure.
+      const ids = state.transactions
+        .filter((t) => t.transferId === action.transferId)
+        .map((t) => t.id);
       return {
         ...state,
         transactions: state.transactions.filter(
           (t) => t.transferId !== action.transferId,
         ),
+        tombstones: recordTombstones(
+          state.tombstones,
+          action.transferId,
+          ...ids,
+        ),
       };
+    }
     case "update_transfer":
       return {
         ...state,
@@ -791,6 +852,7 @@ function coreReducer(state: State, action: Action): State {
               }
             : a,
         ),
+        tombstones: recordTombstones(state.tombstones, action.valuationId),
       };
     case "delete_account": {
       // If this was a bill account, also drop its mirrored Bills-group
@@ -808,11 +870,18 @@ function coreReducer(state: State, action: Action): State {
             return rest;
           })()
         : state.targets;
+      // Tombstone the account id plus the mirrored bill category id
+      // (if present) so a stale device can't resurrect either via
+      // cloud merge.
+      const deletedIds = billCatId
+        ? [action.accountId, billCatId]
+        : [action.accountId];
       return {
         ...state,
         accounts: state.accounts.filter((a) => a.id !== action.accountId),
         groups,
         targets,
+        tombstones: recordTombstones(state.tombstones, ...deletedIds),
       };
     }
     case "reconcile_account":
@@ -852,6 +921,7 @@ function coreReducer(state: State, action: Action): State {
       return {
         ...state,
         rules: state.rules.filter((r) => r.id !== action.ruleId),
+        tombstones: recordTombstones(state.tombstones, action.ruleId),
       };
     case "reorder_rules": {
       const byId = new Map(state.rules.map((r) => [r.id, r]));
@@ -881,6 +951,7 @@ function coreReducer(state: State, action: Action): State {
       return {
         ...state,
         wishlist: state.wishlist.filter((w) => w.id !== action.id),
+        tombstones: recordTombstones(state.tombstones, action.id),
       };
     case "add_savings_goal": {
       // Mirror the goal into a fresh budget category in the "Goals" group
@@ -972,7 +1043,11 @@ function coreReducer(state: State, action: Action): State {
         (g) => g.id !== action.id,
       );
       if (!existing?.categoryId) {
-        return { ...state, savingsGoals };
+        return {
+          ...state,
+          savingsGoals,
+          tombstones: recordTombstones(state.tombstones, action.id),
+        };
       }
       const cid = existing.categoryId;
       const ids = new Set([cid]);
@@ -983,6 +1058,7 @@ function coreReducer(state: State, action: Action): State {
         assignments: pruneAssignments(state.assignments, ids),
         targets: pruneTargets(state.targets, ids),
         pinnedCategoryIds: state.pinnedCategoryIds.filter((id) => id !== cid),
+        tombstones: recordTombstones(state.tombstones, action.id, cid),
       };
     }
     case "add_savings_contribution":
@@ -1012,6 +1088,7 @@ function coreReducer(state: State, action: Action): State {
               }
             : g,
         ),
+        tombstones: recordTombstones(state.tombstones, action.contributionId),
       };
     case "add_template":
       return { ...state, templates: [action.template, ...state.templates] };
@@ -1026,6 +1103,7 @@ function coreReducer(state: State, action: Action): State {
       return {
         ...state,
         templates: state.templates.filter((t) => t.id !== action.id),
+        tombstones: recordTombstones(state.tombstones, action.id),
       };
     case "set_assignment":
       return {
@@ -1077,6 +1155,14 @@ function coreReducer(state: State, action: Action): State {
         assignments: pruneAssignments(state.assignments, ids),
         targets: pruneTargets(state.targets, ids),
         pinnedCategoryIds: state.pinnedCategoryIds.filter((id) => !ids.has(id)),
+        // Tombstone the group AND every child category id. Without
+        // both, a stale device could resurrect either the group or
+        // individual categories via cloudMerge's union-by-id.
+        tombstones: recordTombstones(
+          state.tombstones,
+          action.groupId,
+          ...ids,
+        ),
       };
     }
     case "add_category":
@@ -1142,6 +1228,7 @@ function coreReducer(state: State, action: Action): State {
         pinnedCategoryIds: state.pinnedCategoryIds.filter(
           (id) => id !== action.categoryId,
         ),
+        tombstones: recordTombstones(state.tombstones, action.categoryId),
       };
     }
     case "move_group": {
@@ -1469,6 +1556,7 @@ function coreReducer(state: State, action: Action): State {
       return {
         ...state,
         plannerEntries: state.plannerEntries.filter((e) => e.id !== action.id),
+        tombstones: recordTombstones(state.tombstones, action.id),
       };
     case "add_planner_folder":
       return {
@@ -1487,6 +1575,15 @@ function coreReducer(state: State, action: Action): State {
         (b) => b.folderId !== action.folderId,
       );
       const remainingBudgetIds = new Set(remainingBudgets.map((b) => b.id));
+      // Tombstone the folder, every budget it contained, and every
+      // entry under those budgets. cloudMerge applies tombstones at
+      // every id-keyed level so all three resurrect-paths are closed.
+      const removedBudgetIds = state.plannerBudgets
+        .filter((b) => b.folderId === action.folderId)
+        .map((b) => b.id);
+      const removedEntryIds = state.plannerEntries
+        .filter((e) => !remainingBudgetIds.has(e.budgetId))
+        .map((e) => e.id);
       return {
         ...state,
         plannerFolders: state.plannerFolders.filter(
@@ -1495,6 +1592,12 @@ function coreReducer(state: State, action: Action): State {
         plannerBudgets: remainingBudgets,
         plannerEntries: state.plannerEntries.filter((e) =>
           remainingBudgetIds.has(e.budgetId),
+        ),
+        tombstones: recordTombstones(
+          state.tombstones,
+          action.folderId,
+          ...removedBudgetIds,
+          ...removedEntryIds,
         ),
       };
     }
@@ -1537,7 +1640,10 @@ function coreReducer(state: State, action: Action): State {
           b.id === action.budgetId ? { ...b, name: action.name } : b,
         ),
       };
-    case "delete_planner_budget":
+    case "delete_planner_budget": {
+      const removedEntryIds = state.plannerEntries
+        .filter((e) => e.budgetId === action.budgetId)
+        .map((e) => e.id);
       return {
         ...state,
         plannerBudgets: state.plannerBudgets.filter(
@@ -1546,7 +1652,13 @@ function coreReducer(state: State, action: Action): State {
         plannerEntries: state.plannerEntries.filter(
           (e) => e.budgetId !== action.budgetId,
         ),
+        tombstones: recordTombstones(
+          state.tombstones,
+          action.budgetId,
+          ...removedEntryIds,
+        ),
       };
+    }
     case "duplicate_planner_budget": {
       const sourceEntries = state.plannerEntries.filter(
         (e) => e.budgetId === action.budgetId,
@@ -1644,6 +1756,7 @@ function coreReducer(state: State, action: Action): State {
         scheduledTransactions: state.scheduledTransactions.filter(
           (s) => s.id !== action.id,
         ),
+        tombstones: recordTombstones(state.tombstones, action.id),
       };
     case "set_settings":
       return { ...state, settings: action.settings };
@@ -1717,6 +1830,12 @@ function coreReducer(state: State, action: Action): State {
           typeof (action.payload.settings as AppSettings).currency === "string"
             ? (action.payload.settings as AppSettings)
             : state.settings,
+        tombstones:
+          action.payload.tombstones &&
+          typeof action.payload.tombstones === "object" &&
+          !Array.isArray(action.payload.tombstones)
+            ? (action.payload.tombstones as Record<string, number>)
+            : state.tombstones,
         lastModifiedAt:
           typeof action.payload.lastModifiedAt === "number"
             ? action.payload.lastModifiedAt
@@ -2189,6 +2308,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
               typeof (parsed.settings as AppSettings).currency === "string"
                 ? (parsed.settings as AppSettings)
                 : defaultSettings,
+            tombstones: parseStoredTombstones(parsed.tombstones),
             lastModifiedAt:
               typeof parsed.lastModifiedAt === "number"
                 ? parsed.lastModifiedAt
@@ -2220,6 +2340,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       savingsGoals: sampleSavingsGoals,
       templates: sampleTemplates,
       settings: defaultSettings,
+      tombstones: {},
       lastModifiedAt: 0,
     });
   }, []);
@@ -2508,6 +2629,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
           savingsGoals: state.savingsGoals,
           templates: state.templates,
           settings: state.settings,
+          tombstones: state.tombstones,
           lastModifiedAt: state.lastModifiedAt,
         }),
       );
@@ -3055,6 +3177,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
           savingsGoals: state.savingsGoals,
           templates: state.templates,
           settings: state.settings,
+          tombstones: state.tombstones,
           lastModifiedAt: state.lastModifiedAt,
         }),
       );
@@ -3476,6 +3599,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       savingsGoals: stateRef.savingsGoals,
       templates: stateRef.templates,
       settings: stateRef.settings,
+      tombstones: stateRef.tombstones,
       lastModifiedAt: stateRef.lastModifiedAt,
     };
   }, [stateRef]);
