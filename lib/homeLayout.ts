@@ -13,7 +13,8 @@ export type HomeSectionId =
   | "upcoming-debts"
   | "bills-calendar"
   | "summary"
-  | "future-months";
+  | "future-months"
+  | "fudget";
 
 export type HomeSectionMeta = {
   id: HomeSectionId;
@@ -75,6 +76,11 @@ export const HOME_SECTION_ORDER: HomeSectionMeta[] = [
     id: "future-months",
     label: "Future months",
     description: "Assignments queued for next month.",
+  },
+  {
+    id: "fudget",
+    label: "Fudget",
+    description: "Roll-up of each Fudget folder + balance.",
   },
 ];
 

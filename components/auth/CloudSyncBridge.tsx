@@ -106,6 +106,20 @@ export default function CloudSyncBridge() {
         initialSyncDoneRef.current = { uid: user.uid, syncKey };
         return;
       }
+      // Fresh-install short-circuit: when local has no user mutations
+      // (lastModifiedAt is 0), the only thing in local state is the
+      // sample seed. Merging would leak seed categories / accounts
+      // back into the user's actual data. Adopt cloud outright
+      // instead so a new device on the household picks up the exact
+      // state from sync without contaminating it.
+      if (localStamp === 0) {
+        restoreFromBackup(
+          remote.payload as Parameters<typeof restoreFromBackup>[0],
+        );
+        lastSyncedAtRef.current = remote.updatedAt;
+        initialSyncDoneRef.current = { uid: user.uid, syncKey };
+        return;
+      }
       // Both sides have content. Merge keeps anything local added since
       // we last saw the cloud (and vice versa). The merge's
       // lastModifiedAt = max(local, remote) becomes the new local stamp;

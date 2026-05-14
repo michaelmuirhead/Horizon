@@ -10,18 +10,26 @@ import UpcomingDebtsSection from "@/components/home/UpcomingDebtsSection";
 import FutureMonthsSection from "@/components/home/FutureMonthsSection";
 import WishlistSection from "@/components/home/WishlistSection";
 import WeeklyInsightsSection from "@/components/home/WeeklyInsightsSection";
+import FudgetSection from "@/components/home/FudgetSection";
 import { useHorizonStore } from "@/components/store/HorizonStore";
 import { resolveHomeLayout, type HomeSectionId } from "@/lib/homeLayout";
+import { useHomeLayout } from "@/lib/homeLayoutStore";
 
 const HOUSEHOLD = "Muirhead Family";
 
 export default function HomePage() {
   const { settings } = useHorizonStore();
+  // Home layout is per-device — household members each customize
+  // their own arrangement. settings.homeSectionLayout is the legacy
+  // migration source: if a user's old (synced) layout is the only
+  // thing we have, the hook copies it down on first load so they
+  // don't lose their arrangement.
+  const { layout: savedLayout } = useHomeLayout(settings.homeSectionLayout);
   const now = new Date();
   const monthFmt = new Intl.DateTimeFormat("en-US", { month: "long" });
   const currentMonth = monthFmt.format(now);
 
-  const layout = resolveHomeLayout(settings.homeSectionLayout);
+  const layout = resolveHomeLayout(savedLayout);
 
   // Section components keyed by id. Each section is responsible for
   // its own "hide when empty" behavior (e.g. UpcomingDebtsSection
@@ -37,6 +45,7 @@ export default function HomePage() {
     "bills-calendar": <BillsCalendarSection />,
     summary: <SummarySection month={currentMonth} />,
     "future-months": <FutureMonthsSection />,
+    fudget: <FudgetSection />,
   };
 
   return (

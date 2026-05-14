@@ -26,7 +26,7 @@ const tabs: Tab[] = [
   { href: "/spending", label: "Spending", icon: Banknote },
   { href: "/accounts", label: "Accounts", icon: Landmark },
   { href: "/reflect", label: "Reflect", icon: BarChart3 },
-  { href: "/planner", label: "Planner", icon: CalendarClock },
+  { href: "/planner", label: "Fudget", icon: CalendarClock },
 ];
 
 function isActive(pathname: string, href: string) {

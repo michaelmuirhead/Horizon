@@ -11,17 +11,23 @@ import {
   type HomeSectionId,
   type ResolvedHomeSection,
 } from "@/lib/homeLayout";
+import { useHomeLayout } from "@/lib/homeLayoutStore";
 import { useListReorderDrag } from "@/components/shared/useListReorderDrag";
 
 export default function HomeLayoutPage() {
-  const { settings, setSettings } = useHorizonStore();
+  // Per-device layout: writes go to localStorage, NOT to the synced
+  // settings doc. Lets one household member rearrange their own home
+  // tab without changing the other's. The settings field still acts
+  // as a one-time migration fallback for users whose layout used to
+  // live in synced state.
+  const { settings } = useHorizonStore();
+  const { layout: savedLayout, setLayout: persistLayout } = useHomeLayout(
+    settings.homeSectionLayout,
+  );
 
-  // Local working copy of the layout, hydrated from settings on first
-  // render and edited via the buttons below. We persist on every change
-  // (no explicit "Save") so back-button doesn't drop edits.
   const initial = useMemo(
-    () => resolveHomeLayout(settings.homeSectionLayout),
-    [settings.homeSectionLayout],
+    () => resolveHomeLayout(savedLayout),
+    [savedLayout],
   );
   const [layout, setLayout] = useState<ResolvedHomeSection[]>(initial);
 
@@ -33,7 +39,7 @@ export default function HomeLayoutPage() {
 
   function persist(next: ResolvedHomeSection[]) {
     setLayout(next);
-    setSettings({ ...settings, homeSectionLayout: toSavedLayout(next) });
+    persistLayout(toSavedLayout(next));
   }
 
   function move(idx: number, delta: -1 | 1) {
@@ -68,7 +74,7 @@ export default function HomeLayoutPage() {
 
   function resetToDefault() {
     setLayout(initial.map((r) => ({ id: r.id, hidden: false })));
-    setSettings({ ...settings, homeSectionLayout: undefined });
+    persistLayout(undefined);
   }
 
   return (
@@ -81,6 +87,10 @@ export default function HomeLayoutPage() {
           Sections that have nothing to show (e.g. no upcoming debts) hide
           themselves automatically &mdash; this controls whether they
           appear at all.
+        </p>
+        <p className="text-xs text-fg/55">
+          This arrangement is saved on this device only. Household members
+          on other devices keep their own home layout.
         </p>
 
         <ul className="flex flex-col gap-2">

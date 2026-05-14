@@ -102,4 +102,49 @@ describe("mergePayloads", () => {
     );
     expect(merged.find((g) => g.id === "g2")).toBeTruthy();
   });
+
+  it("tombstoned ids are filtered out across every id-keyed collection", () => {
+    // Stale device still has T1 + cat-x cached; the other side
+    // tombstoned both. Merge should drop them rather than resurrect.
+    const local = {
+      transactions: [
+        { id: "T1", amount: 1 },
+        { id: "T2", amount: 2 },
+      ],
+      groups: [
+        {
+          id: "g1",
+          categories: [
+            { id: "cat-x" },
+            { id: "cat-y" },
+          ],
+        },
+      ],
+      lastModifiedAt: 100,
+    };
+    const remote = {
+      transactions: [{ id: "T2", amount: 2 }],
+      groups: [
+        {
+          id: "g1",
+          categories: [{ id: "cat-y" }],
+        },
+      ],
+      tombstones: { T1: 50, "cat-x": 60 },
+      lastModifiedAt: 80,
+    };
+    const merged = mergePayloads(local, remote);
+    expect(merged.transactions?.map((t) => t.id)).toEqual(["T2"]);
+    const g1 = merged.groups?.find((g) => g.id === "g1");
+    expect(g1?.categories?.map((c) => c.id)).toEqual(["cat-y"]);
+    // Tombstones themselves are kept in the merged payload so they
+    // continue to suppress future re-unions.
+    expect(merged.tombstones).toEqual({ T1: 50, "cat-x": 60 });
+  });
+
+  it("merged tombstones keep the newer deletedAt for shared ids", () => {
+    const local = { tombstones: { x: 100 } };
+    const remote = { tombstones: { x: 50 } };
+    expect(mergePayloads(local, remote).tombstones).toEqual({ x: 100 });
+  });
 });
