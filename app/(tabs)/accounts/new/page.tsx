@@ -28,6 +28,7 @@ export default function NewAccountPage() {
   const [loanApr, setLoanApr] = useState("");
   const [loanTerm, setLoanTerm] = useState("");
   const [creditApr, setCreditApr] = useState("");
+  const [creditLimit, setCreditLimit] = useState("");
   const [minimumPayment, setMinimumPayment] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
 
@@ -44,6 +45,7 @@ export default function NewAccountPage() {
     const apr = parseFloat(loanApr);
     const term = parseInt(loanTerm, 10);
     const cardApr = parseFloat(creditApr);
+    const cardLimit = parseFloat(creditLimit);
     const minPay = parseFloat(minimumPayment);
     const trimmedAccountNumber = accountNumber.trim();
     addAccount({
@@ -58,6 +60,9 @@ export default function NewAccountPage() {
       ...(isLoan ? { loanOriginalPrincipal: magnitude } : {}),
       ...(isCreditCard && Number.isFinite(cardApr) && cardApr > 0
         ? { apr: cardApr }
+        : {}),
+      ...(isCreditCard && Number.isFinite(cardLimit) && cardLimit > 0
+        ? { creditLimit: cardLimit }
         : {}),
       ...(isLiability && Number.isFinite(minPay) && minPay > 0
         ? { minimumPayment: minPay }
@@ -165,6 +170,25 @@ export default function NewAccountPage() {
                 onChange={(e) => setCreditApr(e.target.value)}
                 className="max-w-[120px]"
               />
+            </FormRow>
+          )}
+
+          {isCreditCard && (
+            <FormRow label="Credit Limit" htmlFor="credit-limit">
+              <span className="flex items-center justify-end gap-1">
+                <span className="text-fg/60">$</span>
+                <TextInput
+                  id="credit-limit"
+                  type="number"
+                  inputMode="decimal"
+                  step="100"
+                  min="0"
+                  placeholder="0"
+                  value={creditLimit}
+                  onChange={(e) => setCreditLimit(e.target.value)}
+                  className="max-w-[140px]"
+                />
+              </span>
             </FormRow>
           )}
 

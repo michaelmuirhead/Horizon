@@ -350,6 +350,7 @@ type Action =
       paymentDueDayOfMonth: number | null;
       defaultFundingAccountId: string | null;
       accountNumber: string | null;
+      creditLimit: number | null;
     }
   | { type: "add_planner_entry"; entry: PlannerEntry }
   | { type: "update_planner_entry"; entry: PlannerEntry }
@@ -1273,15 +1274,16 @@ function coreReducer(state: State, action: Action): State {
       let updatedAccount: Account | null = null;
       const accounts = state.accounts.map((a) => {
         if (a.id !== action.accountId) return a;
-        // Strip all five "debt terms" fields first so passing null
-        // for any of them clears it cleanly (rather than leaving a
-        // stale value in place).
+        // Strip every "debt terms" field first so passing null for
+        // any of them clears it cleanly (rather than leaving a stale
+        // value in place).
         const {
           apr: _apr,
           minimumPayment: _min,
           paymentDueDayOfMonth: _due,
           defaultFundingAccountId: _fund,
           accountNumber: _num,
+          creditLimit: _limit,
           ...rest
         } = a;
         void _apr;
@@ -1289,6 +1291,7 @@ function coreReducer(state: State, action: Action): State {
         void _due;
         void _fund;
         void _num;
+        void _limit;
         const next: Account = { ...rest };
         if (action.apr !== null && Number.isFinite(action.apr)) {
           next.apr = action.apr;
@@ -1318,6 +1321,13 @@ function coreReducer(state: State, action: Action): State {
           action.accountNumber.trim() !== ""
         ) {
           next.accountNumber = action.accountNumber.trim();
+        }
+        if (
+          action.creditLimit !== null &&
+          Number.isFinite(action.creditLimit) &&
+          action.creditLimit > 0
+        ) {
+          next.creditLimit = action.creditLimit;
         }
         updatedAccount = next;
         return next;
@@ -1919,6 +1929,7 @@ type Ctx = {
       paymentDueDayOfMonth: number | null;
       defaultFundingAccountId: string | null;
       accountNumber: string | null;
+      creditLimit: number | null;
     },
   ) => void;
   addPlannerEntry: (entry: Omit<PlannerEntry, "id" | "order">) => void;
@@ -2828,6 +2839,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
         paymentDueDayOfMonth: number | null;
         defaultFundingAccountId: string | null;
         accountNumber: string | null;
+        creditLimit: number | null;
       },
     ) => {
       dispatch({
@@ -2838,6 +2850,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
         paymentDueDayOfMonth: terms.paymentDueDayOfMonth,
         defaultFundingAccountId: terms.defaultFundingAccountId,
         accountNumber: terms.accountNumber,
+        creditLimit: terms.creditLimit,
       });
     },
     [],

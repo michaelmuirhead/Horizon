@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { CalendarClock, CheckCircle2, Eye, EyeOff, X } from "lucide-react";
 import type { Account } from "@/lib/accounts";
-import { ASSET_ACCOUNT_TYPES } from "@/lib/accounts";
+import { ASSET_ACCOUNT_TYPES, liveAccountBalance } from "@/lib/accounts";
 import { useHorizonStore } from "@/components/store/HorizonStore";
 import { nextDueDate, ordinalDay } from "@/lib/debtDueDate";
+import { formatCurrency } from "@/lib/format";
 import { isTransferSchedule } from "@/lib/scheduled";
 
 function toInputValue(n: number | undefined): string {
@@ -64,6 +65,7 @@ function shortDate(iso: string): string {
 export default function DebtTermsCard({ account }: { account: Account }) {
   const {
     accounts,
+    transactions,
     scheduledTransactions,
     setAccountDebtTerms,
     addScheduled,
@@ -89,6 +91,9 @@ export default function DebtTermsCard({ account }: { account: Account }) {
   const [accountNumber, setAccountNumber] = useState<string>(
     account.accountNumber ?? "",
   );
+  const [creditLimit, setCreditLimit] = useState<string>(
+    toInputValue(account.creditLimit),
+  );
   // Mask account number by default so it doesn't sit on screen during
   // shoulder-surfing scenarios. The toggle reveals while editing /
   // copying.
@@ -104,6 +109,7 @@ export default function DebtTermsCard({ account }: { account: Account }) {
     setFundingId(fundingDefault?.id ?? "");
     setAccountNumber(account.accountNumber ?? "");
     setShowAccountNumber(false);
+    setCreditLimit(toInputValue(account.creditLimit));
     // initialApr / fundingDefault are derived from the account + accounts
     // list above and don't need to be deps themselves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -126,6 +132,7 @@ export default function DebtTermsCard({ account }: { account: Account }) {
       paymentDueDayOfMonth: parseDueDay(dueDay),
       defaultFundingAccountId: fundingId === "" ? null : fundingId,
       accountNumber: trimmedNumber === "" ? null : trimmedNumber,
+      creditLimit: parseOptionalNumber(creditLimit),
     });
     setSavedHint(true);
   }
@@ -135,6 +142,28 @@ export default function DebtTermsCard({ account }: { account: Account }) {
   const dueFieldId = `debt-due-${account.id}`;
   const fundFieldId = `debt-fund-${account.id}`;
   const numberFieldId = `debt-account-number-${account.id}`;
+  const limitFieldId = `debt-credit-limit-${account.id}`;
+
+  // Utilization preview is credit-card-only. liveAccountBalance is
+  // signed (negative for liabilities); take its magnitude so the
+  // percent reads as "% of limit used".
+  const liveBalanceMagnitude =
+    account.type === "credit-card"
+      ? Math.abs(liveAccountBalance(account, transactions))
+      : 0;
+  const parsedLimit = parseOptionalNumber(creditLimit);
+  const utilizationPct =
+    parsedLimit !== null && parsedLimit > 0
+      ? (liveBalanceMagnitude / parsedLimit) * 100
+      : null;
+  const utilizationTone =
+    utilizationPct === null
+      ? "text-fg/55"
+      : utilizationPct >= 70
+        ? "text-rose-300"
+        : utilizationPct >= 30
+          ? "text-amber-300"
+          : "text-emerald-300";
 
   const dueDayNum = parseDueDay(dueDay);
   const minNum = parseOptionalNumber(minPayment);
@@ -175,6 +204,7 @@ export default function DebtTermsCard({ account }: { account: Account }) {
       paymentDueDayOfMonth: dueDayNum,
       defaultFundingAccountId: fundingAccount.id,
       accountNumber: trimmedNumber === "" ? null : trimmedNumber,
+      creditLimit: parseOptionalNumber(creditLimit),
     });
     addScheduled({
       kind: "transfer",
@@ -329,6 +359,38 @@ export default function DebtTermsCard({ account }: { account: Account }) {
             className="rounded-xl bg-card-elevated px-3 py-2 text-base font-semibold text-fg outline-none placeholder:text-fg/40 tabular-nums"
           />
         </label>
+        {account.type === "credit-card" && (
+          <label
+            htmlFor={limitFieldId}
+            className="col-span-2 flex flex-col gap-1"
+          >
+            <span className="text-xs text-fg/55">Credit Limit</span>
+            <div className="flex items-center gap-1 rounded-xl bg-card-elevated px-3 py-2">
+              <span className="text-fg/60">$</span>
+              <input
+                id={limitFieldId}
+                type="number"
+                inputMode="decimal"
+                step="100"
+                min="0"
+                placeholder="0"
+                value={creditLimit}
+                onChange={(e) => setCreditLimit(e.target.value)}
+                onBlur={commit}
+                className="w-full bg-transparent text-base font-semibold text-fg outline-none placeholder:text-fg/40 tabular-nums"
+              />
+            </div>
+            {utilizationPct !== null && (
+              <span className="mt-0.5 text-[11px] text-fg/55 tabular-nums">
+                <span className={`font-semibold ${utilizationTone}`}>
+                  {utilizationPct.toFixed(0)}%
+                </span>{" "}
+                used · {formatCurrency(liveBalanceMagnitude)} of{" "}
+                {formatCurrency(parsedLimit ?? 0)}
+              </span>
+            )}
+          </label>
+        )}
       </div>
       {account.type === "loan" && account.loanApr !== undefined && (
         <p className="mt-2 text-xs text-fg/50">

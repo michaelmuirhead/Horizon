@@ -62,6 +62,25 @@ export default function DebtRow({ row }: { row: DebtRowData }) {
     row.minimumPayment === null ? "—" : formatCurrency(row.minimumPayment);
   const dueDay = row.account.paymentDueDayOfMonth;
 
+  // Credit-card utilization preview — only meaningful when the user
+  // has supplied a creditLimit. row.balance is already a positive
+  // magnitude so we can divide directly.
+  const limit =
+    row.account.type === "credit-card" &&
+    typeof row.account.creditLimit === "number" &&
+    row.account.creditLimit > 0
+      ? row.account.creditLimit
+      : null;
+  const utilizationPct = limit ? (row.balance / limit) * 100 : null;
+  const utilizationTone =
+    utilizationPct === null
+      ? "text-fg/55"
+      : utilizationPct >= 70
+        ? "text-rose-300"
+        : utilizationPct >= 30
+          ? "text-amber-300"
+          : "text-emerald-300";
+
   return (
     <Link
       href={`/accounts/${row.account.id}`}
@@ -115,6 +134,17 @@ export default function DebtRow({ row }: { row: DebtRowData }) {
         <div className="mt-2 border-t border-fg/5 pt-2 text-xs">
           <span className={`font-semibold ${dueTone(dueDay)}`}>
             {dueLabel(dueDay)}
+          </span>
+        </div>
+      )}
+      {limit !== null && utilizationPct !== null && (
+        <div className="mt-2 border-t border-fg/5 pt-2 text-xs tabular-nums">
+          <span className="text-fg/55">Utilization · </span>
+          <span className={`font-semibold ${utilizationTone}`}>
+            {utilizationPct.toFixed(0)}%
+          </span>{" "}
+          <span className="text-fg/55">
+            ({formatCurrency(row.balance)} / {formatCurrency(limit)})
           </span>
         </div>
       )}
