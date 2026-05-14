@@ -51,7 +51,7 @@ export default function PlannerFolderPage({
             href="/planner"
             className="mt-4 inline-block text-accent text-base font-bold"
           >
-            Back to Planner
+            Back to Fudget
           </Link>
         </div>
       </>

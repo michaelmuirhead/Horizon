@@ -57,7 +57,7 @@ export default function PlannerPage() {
   return (
     <>
       <div className="px-4 pt-[max(env(safe-area-inset-top),12px)]">
-        <PageTitle>Planner</PageTitle>
+        <PageTitle>Fudget</PageTitle>
         <p className="mt-1 text-sm text-fg/55">
           Group budgets into folders for trips, months, or projects.
         </p>

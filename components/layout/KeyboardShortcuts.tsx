@@ -9,7 +9,7 @@ const NAV: { key: string; href: string; label: string }[] = [
   { key: "s", href: "/spending", label: "Spending" },
   { key: "a", href: "/accounts", label: "Accounts" },
   { key: "r", href: "/reflect", label: "Reflect" },
-  { key: "p", href: "/planner", label: "Planner" },
+  { key: "p", href: "/planner", label: "Fudget" },
 ];
 
 const ACTIONS: { keys: string; href: string; label: string }[] = [

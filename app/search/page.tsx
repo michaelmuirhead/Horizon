@@ -259,7 +259,7 @@ export default function SearchPage() {
 
         {results.plannerEntries.length > 0 && (
           <ResultGroup
-            title="Planner entries"
+            title="Fudget entries"
             icon={<Folder size={14} strokeWidth={2.4} />}
           >
             <ul className="flex flex-col gap-2">
