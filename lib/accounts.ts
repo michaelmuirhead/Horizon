@@ -36,6 +36,10 @@ export type Account = {
   // automatically on add and kept in sync on rename / delete /
   // terms-change.
   billCategoryId?: string;
+  // Credit-card credit limit. Combined with the live balance, the
+  // UI computes utilization ("$X used of $Y · NN%") on the debts
+  // list and account detail. Only meaningful for credit-card type.
+  creditLimit?: number;
   // Loan amortization inputs. Only meaningful for type "loan".
   loanApr?: number; // annual percentage rate, e.g. 6.5 for 6.5%
   loanTermMonths?: number;
