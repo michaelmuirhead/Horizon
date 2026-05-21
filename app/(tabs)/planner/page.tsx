@@ -2,12 +2,38 @@
 
 import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
-import { ChevronRight, Copy, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  ChevronRight,
+  Copy,
+  Folder,
+  Pencil,
+  Plus,
+  Receipt,
+  Search,
+  Trash2,
+  Wallet,
+  X,
+} from "lucide-react";
 import PageTitle from "@/components/layout/PageTitle";
 import RowMenu from "@/components/planner/RowMenu";
 import { useHorizonStore } from "@/components/store/HorizonStore";
-import { folderBalance } from "@/lib/planner";
+import { folderBalance, formatPlannerDate } from "@/lib/planner";
 import { formatCurrency } from "@/lib/format";
+
+// Search normaliser: lowercase, fold diacritics, drop everything that
+// isn't alphanumeric. Matches the global /search behaviour so "kroger's"
+// finds "krogers", "Café" finds "cafe", etc.
+function normalize(s: string): string {
+  return s
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+// Cap each results group so an over-broad query doesn't render hundreds
+// of rows at once. 25 is comfortably scrollable on mobile.
+const MAX_PER_GROUP = 25;
 
 export default function PlannerPage() {
   const {
@@ -24,6 +50,7 @@ export default function PlannerPage() {
   const [draftName, setDraftName] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [query, setQuery] = useState("");
 
   const sortedFolders = useMemo(
     () =>
@@ -36,6 +63,42 @@ export default function PlannerPage() {
         ),
     [plannerFolders],
   );
+
+  // Lookup tables so each search result can render a breadcrumb
+  // (Folder · Budget) without an inner find() per row.
+  const folderById = useMemo(
+    () => new Map(plannerFolders.map((f) => [f.id, f])),
+    [plannerFolders],
+  );
+  const budgetById = useMemo(
+    () => new Map(plannerBudgets.map((b) => [b.id, b])),
+    [plannerBudgets],
+  );
+
+  const needle = normalize(query);
+  const searching = needle !== "";
+  const results = useMemo(() => {
+    if (!searching) {
+      return {
+        folders: [] as typeof plannerFolders,
+        budgets: [] as typeof plannerBudgets,
+        entries: [] as typeof plannerEntries,
+      };
+    }
+    return {
+      folders: plannerFolders
+        .filter((f) => normalize(f.name).includes(needle))
+        .slice(0, MAX_PER_GROUP),
+      budgets: plannerBudgets
+        .filter((b) => normalize(b.name).includes(needle))
+        .slice(0, MAX_PER_GROUP),
+      entries: plannerEntries
+        .filter((e) => normalize(e.label).includes(needle))
+        .slice(0, MAX_PER_GROUP),
+    };
+  }, [needle, searching, plannerFolders, plannerBudgets, plannerEntries]);
+  const totalHits =
+    results.folders.length + results.budgets.length + results.entries.length;
 
   function submitCreate(e: FormEvent) {
     e.preventDefault();
@@ -61,9 +124,178 @@ export default function PlannerPage() {
         <p className="mt-1 text-sm text-fg/55">
           Group budgets into folders for trips, months, or projects.
         </p>
+        <div className="mt-3 flex items-center gap-2 rounded-2xl bg-card-elevated px-3 py-2">
+          <Search size={16} className="text-fg/55" strokeWidth={2.4} />
+          <input
+            type="search"
+            placeholder="Search folders, budgets, entries…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="flex-1 bg-transparent text-sm outline-none placeholder:text-fg/40"
+          />
+          {query !== "" && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label="Clear search"
+              className="grid h-7 w-7 place-items-center rounded-full text-fg/55"
+            >
+              <X size={14} strokeWidth={2.4} />
+            </button>
+          )}
+        </div>
       </div>
 
-      {sortedFolders.length === 0 ? (
+      {searching ? (
+        <div className="px-4 pt-3 pb-6 space-y-4">
+          {totalHits === 0 ? (
+            <p className="rounded-2xl bg-card p-5 text-center text-sm text-fg/65">
+              No matches for &ldquo;{query.trim()}&rdquo;.
+            </p>
+          ) : null}
+
+          {results.folders.length > 0 && (
+            <section>
+              <h2 className="flex items-center gap-2 px-1 pb-2 text-xs font-bold uppercase tracking-wide text-fg/55">
+                <Folder size={12} strokeWidth={2.4} />
+                Folders
+              </h2>
+              <ul className="flex flex-col gap-2">
+                {results.folders.map((folder) => {
+                  const balance = folderBalance(
+                    folder.id,
+                    plannerBudgets,
+                    plannerEntries,
+                  );
+                  const tone =
+                    balance > 0
+                      ? "text-emerald-400"
+                      : balance < 0
+                        ? "text-rose-400"
+                        : "text-fg/60";
+                  return (
+                    <li key={folder.id}>
+                      <Link
+                        href={`/planner/${folder.id}`}
+                        className="flex items-center gap-3 rounded-2xl bg-card-elevated px-3 py-3"
+                      >
+                        <span className="flex-1 truncate text-base font-bold">
+                          {folder.name}
+                        </span>
+                        <span
+                          className={`text-base font-bold tabular-nums shrink-0 ${tone}`}
+                        >
+                          {balance >= 0 ? "+" : "−"}
+                          {formatCurrency(Math.abs(balance))}
+                        </span>
+                        <ChevronRight size={14} className="text-fg/40 shrink-0" />
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
+
+          {results.budgets.length > 0 && (
+            <section>
+              <h2 className="flex items-center gap-2 px-1 pb-2 text-xs font-bold uppercase tracking-wide text-fg/55">
+                <Wallet size={12} strokeWidth={2.4} />
+                Budgets
+              </h2>
+              <ul className="flex flex-col gap-2">
+                {results.budgets.map((budget) => {
+                  const folder = folderById.get(budget.folderId);
+                  return (
+                    <li key={budget.id}>
+                      <Link
+                        href={`/planner/${budget.folderId}/${budget.id}`}
+                        className="flex items-center gap-3 rounded-2xl bg-card-elevated px-3 py-3"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="truncate text-base font-bold">
+                            {budget.name}
+                          </p>
+                          {folder && (
+                            <p className="mt-0.5 truncate text-xs text-fg/55">
+                              {folder.name}
+                            </p>
+                          )}
+                        </div>
+                        <ChevronRight size={14} className="text-fg/40 shrink-0" />
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
+
+          {results.entries.length > 0 && (
+            <section>
+              <h2 className="flex items-center gap-2 px-1 pb-2 text-xs font-bold uppercase tracking-wide text-fg/55">
+                <Receipt size={12} strokeWidth={2.4} />
+                Entries
+              </h2>
+              <ul className="flex flex-col gap-2">
+                {results.entries.map((entry) => {
+                  const budget = budgetById.get(entry.budgetId);
+                  const folder = budget
+                    ? folderById.get(budget.folderId)
+                    : undefined;
+                  const isIncome = entry.amount > 0;
+                  const display = `${isIncome ? "+" : "−"}${formatCurrency(
+                    Math.abs(entry.amount),
+                  )}`;
+                  const tone = isIncome ? "text-emerald-400" : "text-rose-400";
+                  // Only build the link when we can find both the
+                  // owning budget + folder — orphan entries (data
+                  // pre-v2 migration) skip the link to avoid 404s.
+                  const href =
+                    budget && folder
+                      ? `/planner/${folder.id}/${budget.id}/${entry.id}`
+                      : null;
+                  const row = (
+                    <div className="flex items-center gap-3 rounded-2xl bg-card-elevated px-3 py-3">
+                      <div className="flex-1 min-w-0">
+                        <p
+                          className={`truncate text-base font-bold ${entry.paid ? "line-through text-fg/55" : ""}`}
+                        >
+                          {entry.label}
+                        </p>
+                        <p className="mt-0.5 truncate text-xs text-fg/55">
+                          {[folder?.name, budget?.name]
+                            .filter(Boolean)
+                            .join(" · ")}
+                          {entry.date
+                            ? ` · ${formatPlannerDate(entry.date)}`
+                            : ""}
+                        </p>
+                      </div>
+                      <span
+                        className={`text-base font-bold tabular-nums shrink-0 ${tone}`}
+                      >
+                        {display}
+                      </span>
+                      {href && (
+                        <ChevronRight
+                          size={14}
+                          className="text-fg/40 shrink-0"
+                        />
+                      )}
+                    </div>
+                  );
+                  return (
+                    <li key={entry.id}>
+                      {href ? <Link href={href}>{row}</Link> : row}
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
+        </div>
+      ) : sortedFolders.length === 0 ? (
         <div className="px-4 py-12 text-center text-sm text-fg/55">
           No folders yet. Tap{" "}
           <span className="font-bold text-fg/85">+ Add Folder</span> below.
@@ -160,6 +392,7 @@ export default function PlannerPage() {
         </ul>
       )}
 
+      {!searching && (
       <div className="px-4 pt-4 pb-2">
         {creating ? (
           <form
@@ -198,6 +431,7 @@ export default function PlannerPage() {
           </button>
         )}
       </div>
+      )}
     </>
   );
 }
