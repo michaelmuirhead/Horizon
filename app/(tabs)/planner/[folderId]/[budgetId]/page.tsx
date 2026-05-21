@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { use, useEffect, useMemo, useRef, useState } from "react";
-import { GripVertical, Minus, Plus } from "lucide-react";
+import { GripVertical, Minus, Plus, Repeat } from "lucide-react";
 import SubpageHeader from "@/components/layout/SubpageHeader";
 import PlannerEntryRow from "@/components/planner/PlannerEntryRow";
 import { usePlannerReorderDrag } from "@/components/planner/usePlannerReorderDrag";
@@ -198,6 +198,17 @@ export default function PlannerBudgetPage({
               Add Expense
             </Link>
           </div>
+          {/* Single-tap entry-point to the recurring-templates
+              picker. Sits below the primary add buttons so it doesn't
+              compete with them visually but is one tap away when the
+              user wants to drop in saved monthly items. */}
+          <Link
+            href={`/planner/${folderId}/${budgetId}/recurring`}
+            className="flex items-center justify-center gap-2 rounded-2xl border border-accent/40 px-3 py-2.5 text-sm font-bold text-accent"
+          >
+            <Repeat size={14} strokeWidth={2.6} />
+            Recurring
+          </Link>
         </div>
       </div>
     </>

@@ -29,6 +29,7 @@ type StatePayload = {
   plannerFolders?: IdItem[];
   plannerBudgets?: IdItem[];
   plannerEntries?: IdItem[];
+  fudgetRecurring?: IdItem[];
   scheduledTransactions?: IdItem[];
   reconciliations?: IdItem[];
   monthNotes?: Record<string, string>;
@@ -238,6 +239,10 @@ export function mergePayloads(
     ),
     plannerEntries: filterTombstoned(
       unionById(local.plannerEntries, remote.plannerEntries, winner),
+      tombstones,
+    ),
+    fudgetRecurring: filterTombstoned(
+      unionById(local.fudgetRecurring, remote.fudgetRecurring, winner),
       tombstones,
     ),
     scheduledTransactions: filterTombstoned(

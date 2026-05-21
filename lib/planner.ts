@@ -63,6 +63,24 @@ export const samplePlannerBudgets: PlannerBudget[] = [
 
 export const samplePlannerEntries: PlannerEntry[] = [];
 
+// Reusable Fudget templates — one row per recurring expense the user
+// expects to drop into multiple budgets (rent, internet, electric,
+// streaming subscriptions, etc.). App-wide, NOT scoped to a folder
+// or budget: the same Rent template can populate every monthly budget.
+// The picker on the budget detail page bulk-adds checked templates as
+// fresh PlannerEntry rows on the current budget at today's date.
+export type FudgetRecurring = {
+  id: string;
+  // Display label that becomes the new entry's label.
+  label: string;
+  // Signed amount — negative for expense, positive for income. The
+  // template carries the sign so an "Income: Paycheck" template can
+  // sit alongside expense templates.
+  amount: number;
+};
+
+export const sampleFudgetRecurring: FudgetRecurring[] = [];
+
 // ─── Pure helpers ───────────────────────────────────────────────────────
 
 // Sort entries chronologically by date. The manual `order` field is a
