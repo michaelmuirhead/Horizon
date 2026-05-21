@@ -46,9 +46,11 @@ import {
 } from "@/lib/cloudSync";
 import { setCurrency as setCurrencyFormatter } from "@/lib/format";
 import {
+  type FudgetRecurring,
   type PlannerBudget,
   type PlannerEntry,
   type PlannerFolder,
+  sampleFudgetRecurring,
   samplePlannerBudgets,
   samplePlannerEntries,
   samplePlannerFolders,
@@ -200,6 +202,7 @@ type State = {
   plannerFolders: PlannerFolder[];
   plannerBudgets: PlannerBudget[];
   plannerEntries: PlannerEntry[];
+  fudgetRecurring: FudgetRecurring[];
   scheduledTransactions: ScheduledTransaction[];
   reconciliations: Reconciliation[];
   monthNotes: Record<string, string>;
@@ -236,6 +239,7 @@ type Action =
       plannerFolders: PlannerFolder[];
       plannerBudgets: PlannerBudget[];
       plannerEntries: PlannerEntry[];
+      fudgetRecurring: FudgetRecurring[];
       scheduledTransactions: ScheduledTransaction[];
       reconciliations: Reconciliation[];
       monthNotes: Record<string, string>;
@@ -362,6 +366,7 @@ type Action =
       creditLimit: number | null;
     }
   | { type: "add_planner_entry"; entry: PlannerEntry }
+  | { type: "add_planner_entries"; entries: PlannerEntry[] }
   | { type: "update_planner_entry"; entry: PlannerEntry }
   | { type: "delete_planner_entry"; id: string }
   | { type: "add_scheduled"; scheduled: ScheduledTransaction }
@@ -386,6 +391,9 @@ type Action =
   | { type: "add_planner_budget"; budget: PlannerBudget }
   | { type: "rename_planner_budget"; budgetId: string; name: string }
   | { type: "delete_planner_budget"; budgetId: string }
+  | { type: "add_fudget_recurring"; item: FudgetRecurring }
+  | { type: "update_fudget_recurring"; item: FudgetRecurring }
+  | { type: "delete_fudget_recurring"; id: string }
   | {
       type: "duplicate_planner_budget";
       budgetId: string;
@@ -412,6 +420,7 @@ const initialState: State = {
   plannerFolders: samplePlannerFolders,
   plannerBudgets: samplePlannerBudgets,
   plannerEntries: samplePlannerEntries,
+  fudgetRecurring: sampleFudgetRecurring,
   scheduledTransactions: samplePlannerScheduled,
   reconciliations: [],
   monthNotes: {},
@@ -579,6 +588,7 @@ function coreReducer(state: State, action: Action): State {
         plannerFolders: action.plannerFolders,
         plannerBudgets: action.plannerBudgets,
         plannerEntries: action.plannerEntries,
+        fudgetRecurring: action.fudgetRecurring,
         scheduledTransactions: action.scheduledTransactions,
         reconciliations: action.reconciliations,
         monthNotes: action.monthNotes,
@@ -1545,6 +1555,12 @@ function coreReducer(state: State, action: Action): State {
         ...state,
         plannerEntries: [action.entry, ...state.plannerEntries],
       };
+    case "add_planner_entries":
+      if (action.entries.length === 0) return state;
+      return {
+        ...state,
+        plannerEntries: [...action.entries, ...state.plannerEntries],
+      };
     case "update_planner_entry":
       return {
         ...state,
@@ -1659,6 +1675,26 @@ function coreReducer(state: State, action: Action): State {
         ),
       };
     }
+    case "add_fudget_recurring":
+      return {
+        ...state,
+        fudgetRecurring: [...state.fudgetRecurring, action.item],
+      };
+    case "update_fudget_recurring":
+      return {
+        ...state,
+        fudgetRecurring: state.fudgetRecurring.map((r) =>
+          r.id === action.item.id ? action.item : r,
+        ),
+      };
+    case "delete_fudget_recurring":
+      return {
+        ...state,
+        fudgetRecurring: state.fudgetRecurring.filter(
+          (r) => r.id !== action.id,
+        ),
+        tombstones: recordTombstones(state.tombstones, action.id),
+      };
     case "duplicate_planner_budget": {
       const sourceEntries = state.plannerEntries.filter(
         (e) => e.budgetId === action.budgetId,
@@ -1800,6 +1836,9 @@ function coreReducer(state: State, action: Action): State {
                 : undefined,
             )
           : state.plannerEntries,
+        fudgetRecurring: Array.isArray(action.payload.fudgetRecurring)
+          ? (action.payload.fudgetRecurring as FudgetRecurring[])
+          : state.fudgetRecurring,
         scheduledTransactions: Array.isArray(action.payload.scheduledTransactions)
           ? action.payload.scheduledTransactions
           : state.scheduledTransactions,
@@ -1934,6 +1973,7 @@ type Ctx = {
   plannerFolders: PlannerFolder[];
   plannerBudgets: PlannerBudget[];
   plannerEntries: PlannerEntry[];
+  fudgetRecurring: FudgetRecurring[];
   scheduledTransactions: ScheduledTransaction[];
   addTransaction: (tx: Omit<Transaction, "id">) => void;
   addTransactions: (txs: Omit<Transaction, "id">[]) => void;
@@ -2052,8 +2092,15 @@ type Ctx = {
     },
   ) => void;
   addPlannerEntry: (entry: Omit<PlannerEntry, "id" | "order">) => void;
+  // Bulk-add path used by the Fudget recurring picker — drops one or
+  // more pre-built entries into a budget in a single dispatch so the
+  // animation snap from the budget detail doesn't fire per row.
+  addPlannerEntries: (entries: Omit<PlannerEntry, "id" | "order">[]) => void;
   updatePlannerEntry: (entry: PlannerEntry) => void;
   deletePlannerEntry: (id: string) => void;
+  addFudgetRecurring: (input: Omit<FudgetRecurring, "id">) => void;
+  updateFudgetRecurring: (item: FudgetRecurring) => void;
+  deleteFudgetRecurring: (id: string) => void;
   addPlannerFolder: (name: string) => void;
   renamePlannerFolder: (folderId: string, name: string) => void;
   deletePlannerFolder: (folderId: string) => void;
@@ -2278,6 +2325,9 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
                     : undefined,
                 )
               : [],
+            fudgetRecurring: Array.isArray(parsed.fudgetRecurring)
+              ? (parsed.fudgetRecurring as FudgetRecurring[])
+              : sampleFudgetRecurring,
             scheduledTransactions: Array.isArray(parsed.scheduledTransactions)
               ? parsed.scheduledTransactions
               : [],
@@ -2332,6 +2382,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       plannerFolders: samplePlannerFolders,
       plannerBudgets: samplePlannerBudgets,
       plannerEntries: samplePlannerEntries,
+      fudgetRecurring: sampleFudgetRecurring,
       scheduledTransactions: samplePlannerScheduled,
       reconciliations: [],
       monthNotes: {},
@@ -2621,6 +2672,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
           plannerFolders: state.plannerFolders,
           plannerBudgets: state.plannerBudgets,
           plannerEntries: state.plannerEntries,
+          fudgetRecurring: state.fudgetRecurring,
           scheduledTransactions: state.scheduledTransactions,
           reconciliations: state.reconciliations,
           monthNotes: state.monthNotes,
@@ -3009,6 +3061,45 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "delete_planner_entry", id });
   }, []);
 
+  // Bulk-add: each entry gets a fresh id, and order starts at
+  // maxOrder + 1 within its budget so the new rows land at the
+  // bottom of their date group. Same chronological-slot semantics as
+  // addPlannerEntry, just batched into one dispatch.
+  const addPlannerEntries = useCallback(
+    (entries: Omit<PlannerEntry, "id" | "order">[]) => {
+      if (entries.length === 0) return;
+      const maxOrderByBudget = new Map<string, number>();
+      for (const e of stateRef.plannerEntries) {
+        const cur = maxOrderByBudget.get(e.budgetId) ?? -1;
+        const o = e.order ?? -1;
+        if (o > cur) maxOrderByBudget.set(e.budgetId, o);
+      }
+      const built: PlannerEntry[] = entries.map((e) => {
+        const base = (maxOrderByBudget.get(e.budgetId) ?? -1) + 1;
+        maxOrderByBudget.set(e.budgetId, base);
+        return { ...e, id: makeId(), order: base };
+      });
+      dispatch({ type: "add_planner_entries", entries: built });
+    },
+    [stateRef],
+  );
+
+  const addFudgetRecurring = useCallback(
+    (input: Omit<FudgetRecurring, "id">) => {
+      dispatch({
+        type: "add_fudget_recurring",
+        item: { ...input, id: makeId() },
+      });
+    },
+    [],
+  );
+  const updateFudgetRecurring = useCallback((item: FudgetRecurring) => {
+    dispatch({ type: "update_fudget_recurring", item });
+  }, []);
+  const deleteFudgetRecurring = useCallback((id: string) => {
+    dispatch({ type: "delete_fudget_recurring", id });
+  }, []);
+
   const addPlannerFolder = useCallback((name: string) => {
     dispatch({
       type: "add_planner_folder",
@@ -3169,6 +3260,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
           plannerFolders: state.plannerFolders,
           plannerBudgets: state.plannerBudgets,
           plannerEntries: state.plannerEntries,
+          fudgetRecurring: state.fudgetRecurring,
           scheduledTransactions: state.scheduledTransactions,
           reconciliations: state.reconciliations,
           monthNotes: state.monthNotes,
@@ -3409,6 +3501,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
             plannerFolders: state.plannerFolders,
             plannerBudgets: state.plannerBudgets,
             plannerEntries: state.plannerEntries,
+            fudgetRecurring: state.fudgetRecurring,
             scheduledTransactions: state.scheduledTransactions,
             reconciliations: state.reconciliations,
             monthNotes: state.monthNotes,
@@ -3550,6 +3643,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
           plannerFolders: state.plannerFolders,
           plannerBudgets: state.plannerBudgets,
           plannerEntries: state.plannerEntries,
+          fudgetRecurring: state.fudgetRecurring,
           scheduledTransactions: state.scheduledTransactions,
           settings: state.settings,
         },
@@ -3591,6 +3685,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       plannerFolders: stateRef.plannerFolders,
       plannerBudgets: stateRef.plannerBudgets,
       plannerEntries: stateRef.plannerEntries,
+      fudgetRecurring: stateRef.fudgetRecurring,
       scheduledTransactions: stateRef.scheduledTransactions,
       reconciliations: stateRef.reconciliations,
       monthNotes: stateRef.monthNotes,
@@ -3615,6 +3710,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       plannerFolders: state.plannerFolders,
       plannerBudgets: state.plannerBudgets,
       plannerEntries: state.plannerEntries,
+      fudgetRecurring: state.fudgetRecurring,
       scheduledTransactions: state.scheduledTransactions,
       addTransaction,
       addTransactions,
@@ -3675,8 +3771,12 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       setAccountPhoto,
       setAccountDebtTerms,
       addPlannerEntry,
+      addPlannerEntries,
       updatePlannerEntry,
       deletePlannerEntry,
+      addFudgetRecurring,
+      updateFudgetRecurring,
+      deleteFudgetRecurring,
       addPlannerFolder,
       renamePlannerFolder,
       deletePlannerFolder,
@@ -3786,8 +3886,12 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       setAccountPhoto,
       setAccountDebtTerms,
       addPlannerEntry,
+      addPlannerEntries,
       updatePlannerEntry,
       deletePlannerEntry,
+      addFudgetRecurring,
+      updateFudgetRecurring,
+      deleteFudgetRecurring,
       addPlannerFolder,
       renamePlannerFolder,
       deletePlannerFolder,
