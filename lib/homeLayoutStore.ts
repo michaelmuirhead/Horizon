@@ -12,7 +12,7 @@
 // migrates as soon as they touch the customize page.
 
 import { useCallback, useEffect, useState } from "react";
-import type { HomeSectionPreference } from "@/lib/homeLayout";
+import type { HomeSectionPreference } from "@/components/store/HorizonStore";
 
 const STORAGE_KEY = "horizon-home-layout";
 
