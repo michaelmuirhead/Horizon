@@ -3064,7 +3064,10 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
   // Bulk-add: each entry gets a fresh id, and order starts at
   // maxOrder + 1 within its budget so the new rows land at the
   // bottom of their date group. Same chronological-slot semantics as
-  // addPlannerEntry, just batched into one dispatch.
+  // addPlannerEntry, just batched into one dispatch. Reads stateRef
+  // (declared below) for the current entries list — same closure
+  // pattern as addPlannerEntry / exportBackup elsewhere in this file,
+  // so an empty dep array keeps the callback identity stable.
   const addPlannerEntries = useCallback(
     (entries: Omit<PlannerEntry, "id" | "order">[]) => {
       if (entries.length === 0) return;
@@ -3081,7 +3084,8 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       });
       dispatch({ type: "add_planner_entries", entries: built });
     },
-    [stateRef],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
   );
 
   const addFudgetRecurring = useCallback(
