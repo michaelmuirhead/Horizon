@@ -6,13 +6,26 @@ import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import SubpageHeader from "@/components/layout/SubpageHeader";
 import { useHorizonStore } from "@/components/store/HorizonStore";
+import { ordinalDay } from "@/lib/debtDueDate";
 import { formatCurrency } from "@/lib/format";
 
-// Today's ISO date — used as the default date when the user
-// drops checked recurring templates into the budget.
+// Today's ISO date — used as the fallback when a template doesn't
+// carry a dayOfMonth.
 function todayIso(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Resolve a template's dayOfMonth against the current month, clamping
+// to the month's last valid date (so a "31st" template lands on Feb
+// 28/29 in February instead of overflowing).
+function dateForDayInCurrentMonth(day: number): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const lastOfMonth = new Date(y, m + 1, 0).getDate();
+  const clamped = Math.min(Math.max(1, Math.floor(day)), lastOfMonth);
+  return `${y}-${String(m + 1).padStart(2, "0")}-${String(clamped).padStart(2, "0")}`;
 }
 
 function parseAmountInput(raw: string): number | null {
@@ -20,6 +33,15 @@ function parseAmountInput(raw: string): number | null {
   if (trimmed === "") return null;
   const parsed = parseFloat(trimmed);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+// 1..31; empty / out-of-range → null, meaning "no fixed day".
+function parseDayInput(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (trimmed === "") return null;
+  const parsed = parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 31) return null;
+  return parsed;
 }
 
 export default function FudgetRecurringPickerPage({
@@ -59,10 +81,12 @@ export default function FudgetRecurringPickerPage({
   // income (e.g. a paycheck) with the toggle.
   const [draftLabel, setDraftLabel] = useState("");
   const [draftAmount, setDraftAmount] = useState("");
+  const [draftDay, setDraftDay] = useState("");
   const [draftDirection, setDraftDirection] = useState<"expense" | "income">(
     "expense",
   );
   const draftAmountValue = parseAmountInput(draftAmount);
+  const draftDayValue = parseDayInput(draftDay);
   const newValid = draftLabel.trim() !== "" && draftAmountValue !== null;
 
   function submitNewTemplate(e: FormEvent) {
@@ -70,13 +94,22 @@ export default function FudgetRecurringPickerPage({
     if (!newValid || draftAmountValue === null) return;
     const signed =
       draftDirection === "income" ? draftAmountValue : -draftAmountValue;
-    addFudgetRecurring({ label: draftLabel.trim(), amount: signed });
+    addFudgetRecurring({
+      label: draftLabel.trim(),
+      amount: signed,
+      // Only persist the field when the user actually picked a day.
+      // An undefined dayOfMonth means "use today" on bulk-add.
+      ...(draftDayValue !== null ? { dayOfMonth: draftDayValue } : {}),
+    });
     setDraftLabel("");
     setDraftAmount("");
+    setDraftDay("");
   }
 
-  // Bulk-add the checked templates to the current budget at today's
-  // date, then navigate back so the user sees their new rows.
+  // Bulk-add the checked templates to the current budget, then
+  // navigate back so the user sees their new rows. Each entry's date
+  // resolves from its template's dayOfMonth against the current
+  // calendar month; templates without a fixed day fall back to today.
   function addCheckedToBudget() {
     if (checked.size === 0) return;
     const today = todayIso();
@@ -86,7 +119,10 @@ export default function FudgetRecurringPickerPage({
         budgetId,
         label: r.label,
         amount: r.amount,
-        date: today,
+        date:
+          typeof r.dayOfMonth === "number"
+            ? dateForDayInCurrentMonth(r.dayOfMonth)
+            : today,
       }));
     if (newEntries.length === 0) return;
     addPlannerEntries(newEntries);
@@ -179,9 +215,14 @@ export default function FudgetRecurringPickerPage({
                     onClick={() => toggle(r.id)}
                     className="flex flex-1 min-w-0 items-center gap-3 text-left"
                   >
-                    <span className="flex-1 min-w-0 truncate text-base font-bold">
-                      {r.label}
-                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="truncate text-base font-bold">{r.label}</p>
+                      {typeof r.dayOfMonth === "number" && (
+                        <p className="mt-0.5 text-xs text-fg/55">
+                          Due {ordinalDay(r.dayOfMonth)}
+                        </p>
+                      )}
+                    </div>
                     <span className={`text-base font-bold tabular-nums shrink-0 ${tone}`}>
                       {sign}
                       {formatCurrency(Math.abs(r.amount))}
@@ -272,6 +313,29 @@ export default function FudgetRecurringPickerPage({
                 <Plus size={18} strokeWidth={2.5} />
               </button>
             </div>
+            <label className="flex items-center justify-between gap-2 text-xs text-fg/55">
+              <span>
+                Due day{" "}
+                <span className="text-fg/40">
+                  (1&ndash;31, optional)
+                </span>
+              </span>
+              <input
+                type="number"
+                inputMode="numeric"
+                step="1"
+                min="1"
+                max="31"
+                placeholder="e.g. 15"
+                value={draftDay}
+                onChange={(e) => setDraftDay(e.target.value)}
+                className="w-20 rounded-md bg-card-elevated px-2 py-1.5 text-right text-base font-semibold text-fg outline-none placeholder:text-fg/40 tabular-nums"
+              />
+            </label>
+            <p className="text-[11px] text-fg/45">
+              When set, bulk-add lands the entry on this day of the current
+              month. Leave blank to use today.
+            </p>
           </form>
         </section>
       </div>

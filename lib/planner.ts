@@ -77,6 +77,12 @@ export type FudgetRecurring = {
   // template carries the sign so an "Income: Paycheck" template can
   // sit alongside expense templates.
   amount: number;
+  // Optional day of the month (1..31) the template is due on.
+  // Bulk-add resolves it against today's year + month so a "Rent on
+  // the 1st" template lands at YYYY-MM-01 instead of today's date.
+  // Values past the month's last day clamp down (e.g. day 31 in
+  // February resolves to Feb 28/29). Absent → fall back to today.
+  dayOfMonth?: number;
 };
 
 export const sampleFudgetRecurring: FudgetRecurring[] = [];
