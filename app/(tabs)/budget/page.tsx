@@ -68,8 +68,14 @@ function Budget() {
   const [editMode, setEditMode] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
 
+  // `visibleGroups` strips groups whose only categories are hidden, which
+  // is the right call in view mode but hides a freshly-created group
+  // (zero categories) the instant the user adds it. Keep every group on
+  // screen while editing so the new row sticks and can be filled in.
+  const editableGroups = editMode ? groups : shownGroups;
+
   const { drag, gripPointerDown, rowStyle } = useCategoryReorderDrag({
-    groups: shownGroups,
+    groups: editableGroups,
     reorderGroup,
     reorderCategory,
   });
@@ -114,7 +120,7 @@ function Budget() {
       </div>
       <div className="lg:flex lg:gap-4 lg:px-4 lg:items-start">
         <div className="flex flex-col gap-2 lg:flex-1 lg:min-w-0 lg:rounded-2xl lg:overflow-hidden lg:border lg:border-fg/5">
-          {shownGroups.map((group) => (
+          {editableGroups.map((group) => (
             <CategoryGroupSection
               key={group.id}
               group={group}
