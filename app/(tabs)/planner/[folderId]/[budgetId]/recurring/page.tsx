@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { use, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2 } from "lucide-react";
+import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
 import SubpageHeader from "@/components/layout/SubpageHeader";
 import { useHorizonStore } from "@/components/store/HorizonStore";
 import { ordinalDay } from "@/lib/debtDueDate";
@@ -56,6 +56,7 @@ export default function FudgetRecurringPickerPage({
     plannerBudgets,
     fudgetRecurring,
     addFudgetRecurring,
+    updateFudgetRecurring,
     deleteFudgetRecurring,
     addPlannerEntries,
   } = useHorizonStore();
@@ -104,6 +105,52 @@ export default function FudgetRecurringPickerPage({
     setDraftLabel("");
     setDraftAmount("");
     setDraftDay("");
+  }
+
+  // Edit-in-place state. editingId pins the row that's currently in
+  // edit mode; the editLabel/Amount/Day/Direction drafts seed from
+  // that row's stored values on enter and persist on save.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState("");
+  const [editAmount, setEditAmount] = useState("");
+  const [editDay, setEditDay] = useState("");
+  const [editDirection, setEditDirection] = useState<"expense" | "income">(
+    "expense",
+  );
+  const editAmountValue = parseAmountInput(editAmount);
+  const editDayValue = parseDayInput(editDay);
+  const editValid = editLabel.trim() !== "" && editAmountValue !== null;
+
+  function startEdit(r: { id: string; label: string; amount: number; dayOfMonth?: number }) {
+    setEditingId(r.id);
+    setEditLabel(r.label);
+    setEditAmount(Math.abs(r.amount).toString());
+    setEditDirection(r.amount >= 0 ? "income" : "expense");
+    setEditDay(
+      typeof r.dayOfMonth === "number" ? String(r.dayOfMonth) : "",
+    );
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+  }
+
+  function saveEdit(e: FormEvent) {
+    e.preventDefault();
+    if (editingId === null || !editValid || editAmountValue === null) return;
+    const signed =
+      editDirection === "income" ? editAmountValue : -editAmountValue;
+    // updateFudgetRecurring replaces the whole record, so we send a
+    // fresh shape — dropping dayOfMonth entirely when the user
+    // cleared the field rather than re-saving an undefined value
+    // that survives JSON round-trips as a stale `undefined` key.
+    updateFudgetRecurring({
+      id: editingId,
+      label: editLabel.trim(),
+      amount: signed,
+      ...(editDayValue !== null ? { dayOfMonth: editDayValue } : {}),
+    });
+    setEditingId(null);
   }
 
   // Bulk-add the checked templates to the current budget, then
@@ -172,6 +219,101 @@ export default function FudgetRecurringPickerPage({
               const isIncome = r.amount > 0;
               const tone = isIncome ? "text-emerald-400" : "text-rose-400";
               const sign = isIncome ? "+" : "−";
+              const isEditing = editingId === r.id;
+              if (isEditing) {
+                return (
+                  <li
+                    key={r.id}
+                    className="rounded-2xl bg-accent/10 px-3 py-3 ring-1 ring-accent/50"
+                  >
+                    <form onSubmit={saveEdit} className="space-y-2">
+                      <input
+                        type="text"
+                        autoFocus
+                        value={editLabel}
+                        onChange={(e) => setEditLabel(e.target.value)}
+                        placeholder="Label"
+                        className="w-full rounded-xl bg-card-elevated px-3 py-2 text-base font-semibold text-fg outline-none placeholder:text-fg/40"
+                      />
+                      <div className="flex items-center gap-2">
+                        <div className="hz-capsule flex shrink-0 overflow-hidden rounded-full">
+                          {(["expense", "income"] as const).map((d) => (
+                            <button
+                              key={d}
+                              type="button"
+                              onClick={() => setEditDirection(d)}
+                              aria-pressed={editDirection === d}
+                              className={`px-3 py-2 text-xs font-bold uppercase tracking-wide transition-colors ${
+                                editDirection === d
+                                  ? d === "income"
+                                    ? "bg-emerald-500/30 text-emerald-300"
+                                    : "bg-rose-500/30 text-rose-300"
+                                  : "text-fg/55"
+                              }`}
+                            >
+                              {d === "expense" ? "Out" : "In"}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex flex-1 items-center gap-1 rounded-xl bg-card-elevated px-3 py-2">
+                          <span className="text-fg/60">$</span>
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            step="0.01"
+                            min="0"
+                            placeholder="0.00"
+                            value={editAmount}
+                            onChange={(e) => setEditAmount(e.target.value)}
+                            className="w-full bg-transparent text-base font-semibold text-fg outline-none placeholder:text-fg/40 tabular-nums"
+                          />
+                        </div>
+                      </div>
+                      <label className="flex items-center justify-between gap-2 text-xs text-fg/55">
+                        <span>
+                          Due day{" "}
+                          <span className="text-fg/40">
+                            (1&ndash;31, optional)
+                          </span>
+                        </span>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          step="1"
+                          min="1"
+                          max="31"
+                          placeholder="e.g. 15"
+                          value={editDay}
+                          onChange={(e) => setEditDay(e.target.value)}
+                          className="w-20 rounded-md bg-card-elevated px-2 py-1.5 text-right text-base font-semibold text-fg outline-none placeholder:text-fg/40 tabular-nums"
+                        />
+                      </label>
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={cancelEdit}
+                          aria-label="Cancel edit"
+                          className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-card-elevated text-fg/70"
+                        >
+                          <X size={14} strokeWidth={2.4} />
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={!editValid}
+                          className={`flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-2 text-sm font-bold ${
+                            editValid
+                              ? "bg-accent text-page"
+                              : "bg-card-elevated text-fg/40 cursor-not-allowed"
+                          }`}
+                        >
+                          <Check size={14} strokeWidth={2.6} />
+                          Save changes
+                        </button>
+                      </div>
+                    </form>
+                  </li>
+                );
+              }
               return (
                 <li
                   key={r.id}
@@ -227,6 +369,14 @@ export default function FudgetRecurringPickerPage({
                       {sign}
                       {formatCurrency(Math.abs(r.amount))}
                     </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => startEdit(r)}
+                    aria-label={`Edit ${r.label}`}
+                    className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-fg/55 hover:text-fg"
+                  >
+                    <Pencil size={14} strokeWidth={2.4} />
                   </button>
                   <button
                     type="button"
