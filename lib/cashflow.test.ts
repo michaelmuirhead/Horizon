@@ -148,13 +148,22 @@ describe("baselineDailyDrift", () => {
   });
 
   it("hasEnoughData=true when both day and tx floors are met", () => {
-    // 21 days, 15 txs.
+    // 15 txs spread across the 21 days leading up to `today`, plus one
+    // extra at exactly -21 days so the span is solidly past the
+    // 14-day floor. Walk back from today using real Date arithmetic so
+    // the dates roll into the previous month cleanly (the naive
+    // `13 - n` trick produced invalid days like 2026-04--6).
+    const todayDate = new Date(`${today}T00:00:00Z`);
+    const isoOffset = (daysBack: number) => {
+      const d = new Date(todayDate);
+      d.setUTCDate(d.getUTCDate() - daysBack);
+      return d.toISOString().slice(0, 10);
+    };
     const txs: Transaction[] = [];
     for (let i = 0; i < 15; i++) {
-      const day = String(13 - Math.floor((i * 21) / 15)).padStart(2, "0");
       txs.push({
         id: `t${i}`,
-        date: `2026-04-${day}`,
+        date: isoOffset(Math.floor((i * 21) / 15)),
         payee: "Coffee",
         category: "Food",
         amount: -10,
@@ -162,10 +171,9 @@ describe("baselineDailyDrift", () => {
         cleared: true,
       });
     }
-    // Plus one tx on day -21 so the span is solidly 21+ days.
     txs.push({
       id: "old",
-      date: "2026-04-22",
+      date: isoOffset(21),
       payee: "Coffee",
       category: "Food",
       amount: -10,
