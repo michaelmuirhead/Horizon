@@ -7,6 +7,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -192,7 +193,7 @@ function autoCategorize(
   return { ...tx, category: matched };
 }
 
-type State = {
+export type State = {
   transactions: Transaction[];
   accounts: Account[];
   groups: BudgetCategoryGroup[];
@@ -227,7 +228,7 @@ type State = {
   hydrated: boolean;
 };
 
-type Action =
+export type Action =
   | {
       type: "hydrate";
       transactions: Transaction[];
@@ -575,7 +576,7 @@ function recordTombstones(
   return next;
 }
 
-function coreReducer(state: State, action: Action): State {
+export function coreReducer(state: State, action: Action): State {
   switch (action.type) {
     case "hydrate":
       return {
@@ -3038,7 +3039,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       // giving the new entry maxOrder + 1 lands it at the bottom of its
       // own date group, which is what users expect when they hit
       // "Add Income/Expense".
-      const siblings = stateRef.plannerEntries.filter(
+      const siblings = stateRef.current.plannerEntries.filter(
         (e) => e.budgetId === entry.budgetId,
       );
       const maxOrder = siblings.reduce(
@@ -3072,7 +3073,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
     (entries: Omit<PlannerEntry, "id" | "order">[]) => {
       if (entries.length === 0) return;
       const maxOrderByBudget = new Map<string, number>();
-      for (const e of stateRef.plannerEntries) {
+      for (const e of stateRef.current.plannerEntries) {
         const cur = maxOrderByBudget.get(e.budgetId) ?? -1;
         const o = e.order ?? -1;
         if (o > cur) maxOrderByBudget.set(e.budgetId, o);
@@ -3126,17 +3127,16 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
   // new ids for each cloned record outside the reducer so the reducer
   // can stay pure (mirrors duplicatePlannerBudget).
   const duplicatePlannerFolder = useCallback((folderId: string) => {
-    const sourceFolder = stateRef.plannerFolders.find(
-      (f) => f.id === folderId,
-    );
+    const s = stateRef.current;
+    const sourceFolder = s.plannerFolders.find((f) => f.id === folderId);
     if (!sourceFolder) return;
-    const sourceBudgets = stateRef.plannerBudgets.filter(
+    const sourceBudgets = s.plannerBudgets.filter(
       (b) => b.folderId === folderId,
     );
     const budgetIdMap: Record<string, string> = {};
     for (const b of sourceBudgets) budgetIdMap[b.id] = makeId();
     const entryIdMap: Record<string, string> = {};
-    for (const e of stateRef.plannerEntries) {
+    for (const e of s.plannerEntries) {
       if (budgetIdMap[e.budgetId]) entryIdMap[e.id] = makeId();
     }
     dispatch({
@@ -3178,11 +3178,10 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
   // shape that consumes idMap.
   const duplicatePlannerBudget = useCallback(
     (budgetId: string) => {
-      const sourceBudget = stateRef.plannerBudgets.find(
-        (b) => b.id === budgetId,
-      );
+      const s = stateRef.current;
+      const sourceBudget = s.plannerBudgets.find((b) => b.id === budgetId);
       if (!sourceBudget) return;
-      const sourceEntries = stateRef.plannerEntries.filter(
+      const sourceEntries = s.plannerEntries.filter(
         (e) => e.budgetId === budgetId,
       );
       const idMap: Record<string, string> = {};
@@ -3199,8 +3198,8 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
         idMap,
       });
     },
-    // stateRef is stable — captured at the closure site below — so we
-    // keep the dep list empty.
+    // stateRef is a ref — its identity is stable, and `.current` is
+    // refreshed on every render — so empty deps still see live state.
     [],
   );
 
@@ -3677,31 +3676,41 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(handle);
   }, [pendingUndo]);
 
-  const stateRef = state; // captured for the exporter below
+  // Always-fresh handle on state for callbacks that need to read it but
+  // are memoised with `[]` deps (so their identity stays stable across
+  // renders). The ref is reassigned on every render below, so anything
+  // reading `stateRef.current` after mount sees the latest state — not
+  // the snapshot from the render that created the callback. Without
+  // this, callbacks like `duplicatePlannerFolder` would only ever see
+  // the first-render state and silently no-op for any folder/budget the
+  // user created after mount.
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const exportBackup = useCallback((): Partial<State> => {
+    const s = stateRef.current;
     return {
-      transactions: stateRef.transactions,
-      accounts: stateRef.accounts,
-      groups: stateRef.groups,
-      assignments: stateRef.assignments,
-      pinnedCategoryIds: stateRef.pinnedCategoryIds,
-      targets: stateRef.targets,
-      plannerFolders: stateRef.plannerFolders,
-      plannerBudgets: stateRef.plannerBudgets,
-      plannerEntries: stateRef.plannerEntries,
-      fudgetRecurring: stateRef.fudgetRecurring,
-      scheduledTransactions: stateRef.scheduledTransactions,
-      reconciliations: stateRef.reconciliations,
-      monthNotes: stateRef.monthNotes,
-      rules: stateRef.rules,
-      wishlist: stateRef.wishlist,
-      savingsGoals: stateRef.savingsGoals,
-      templates: stateRef.templates,
-      settings: stateRef.settings,
-      tombstones: stateRef.tombstones,
-      lastModifiedAt: stateRef.lastModifiedAt,
+      transactions: s.transactions,
+      accounts: s.accounts,
+      groups: s.groups,
+      assignments: s.assignments,
+      pinnedCategoryIds: s.pinnedCategoryIds,
+      targets: s.targets,
+      plannerFolders: s.plannerFolders,
+      plannerBudgets: s.plannerBudgets,
+      plannerEntries: s.plannerEntries,
+      fudgetRecurring: s.fudgetRecurring,
+      scheduledTransactions: s.scheduledTransactions,
+      reconciliations: s.reconciliations,
+      monthNotes: s.monthNotes,
+      rules: s.rules,
+      wishlist: s.wishlist,
+      savingsGoals: s.savingsGoals,
+      templates: s.templates,
+      settings: s.settings,
+      tombstones: s.tombstones,
+      lastModifiedAt: s.lastModifiedAt,
     };
-  }, [stateRef]);
+  }, []);
 
   const value = useMemo<Ctx>(
     () => ({
