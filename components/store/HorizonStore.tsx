@@ -193,7 +193,7 @@ function autoCategorize(
   return { ...tx, category: matched };
 }
 
-type State = {
+export type State = {
   transactions: Transaction[];
   accounts: Account[];
   groups: BudgetCategoryGroup[];
@@ -228,7 +228,7 @@ type State = {
   hydrated: boolean;
 };
 
-type Action =
+export type Action =
   | {
       type: "hydrate";
       transactions: Transaction[];
@@ -576,7 +576,7 @@ function recordTombstones(
   return next;
 }
 
-function coreReducer(state: State, action: Action): State {
+export function coreReducer(state: State, action: Action): State {
   switch (action.type) {
     case "hydrate":
       return {
