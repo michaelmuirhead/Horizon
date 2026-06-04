@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import HomeHeader from "@/components/home/HomeHeader";
 import QuickAddSection from "@/components/home/QuickAddSection";
 import PinnedSection from "@/components/home/PinnedSection";
@@ -14,10 +16,23 @@ import FudgetSection from "@/components/home/FudgetSection";
 import { useHorizonStore } from "@/components/store/HorizonStore";
 import { resolveHomeLayout, type HomeSectionId } from "@/lib/homeLayout";
 import { useHomeLayout } from "@/lib/homeLayoutStore";
+import { useHiddenTabs, visibleTabs } from "@/lib/tabs";
 
 const HOUSEHOLD = "Muirhead Family";
 
 export default function HomePage() {
+  const router = useRouter();
+  const { hidden: hiddenTabs } = useHiddenTabs();
+  // If the user has hidden the Home tab there's no nav entry to
+  // navigate away with, so bounce them at the first remaining tab.
+  // Effect runs post-hydration; the stored list is empty on SSR, so a
+  // user with Home visible never sees this fire.
+  useEffect(() => {
+    if (!hiddenTabs.includes("home")) return;
+    const next = visibleTabs(hiddenTabs)[0];
+    if (next && next.href !== "/") router.replace(next.href);
+  }, [hiddenTabs, router]);
+
   const { settings } = useHorizonStore();
   // Home layout is per-device — household members each customize
   // their own arrangement. settings.homeSectionLayout is the legacy

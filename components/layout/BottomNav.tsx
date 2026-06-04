@@ -1,33 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo } from "react";
 import { usePathname } from "next/navigation";
-import {
-  Home,
-  BookOpen,
-  Banknote,
-  Landmark,
-  BarChart3,
-  CalendarClock,
-  type LucideIcon,
-} from "lucide-react";
+import { TABS, useHiddenTabs, type TabDef } from "@/lib/tabs";
 
-type Tab = {
-  href: string;
-  label: string;
-  icon: LucideIcon;
-  badge?: number;
-};
-
-// TODO: drive `badge` from a notifications store once one exists.
-const tabs: Tab[] = [
-  { href: "/", label: "Home", icon: Home, badge: 1 },
-  { href: "/budget", label: "Budget", icon: BookOpen },
-  { href: "/spending", label: "Spending", icon: Banknote },
-  { href: "/accounts", label: "Accounts", icon: Landmark },
-  { href: "/reflect", label: "Reflect", icon: BarChart3 },
-  { href: "/planner", label: "Fudget", icon: CalendarClock },
-];
+// Per-tab notification badges. None of the other tabs surface a count
+// yet, so this is a single entry rather than a field on each tab — but
+// the lookup keeps the door open for more later.
+// TODO: drive these from a notifications store once one exists.
+const BADGES: Partial<Record<TabDef["id"], number>> = { home: 1 };
 
 function isActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
@@ -36,6 +18,11 @@ function isActive(pathname: string, href: string) {
 
 export default function BottomNav() {
   const pathname = usePathname();
+  const { hidden } = useHiddenTabs();
+  const tabs = useMemo(() => {
+    const hide = new Set(hidden);
+    return TABS.filter((t) => !hide.has(t.id));
+  }, [hidden]);
 
   return (
     <>
@@ -49,6 +36,7 @@ export default function BottomNav() {
             {tabs.map((tab) => {
               const active = isActive(pathname, tab.href);
               const Icon = tab.icon;
+              const badge = BADGES[tab.id];
               return (
                 <li key={tab.href} className="flex-1">
                   <Link
@@ -66,12 +54,12 @@ export default function BottomNav() {
                         strokeWidth={active ? 2.4 : 2}
                         className={active ? "text-white" : "text-fg/80"}
                       />
-                      {tab.badge !== undefined && tab.badge > 0 && (
+                      {badge !== undefined && badge > 0 && (
                         <span
-                          aria-label={`${tab.badge} new`}
+                          aria-label={`${badge} new`}
                           className="hz-pill-danger absolute -right-0.5 -top-0.5 grid min-h-[16px] min-w-[16px] place-items-center rounded-full px-1 text-[10px] font-bold ring-2 ring-card-elevated"
                         >
-                          {tab.badge}
+                          {badge}
                         </span>
                       )}
                     </span>
@@ -99,6 +87,7 @@ export default function BottomNav() {
           {tabs.map((tab) => {
             const active = isActive(pathname, tab.href);
             const Icon = tab.icon;
+            const badge = BADGES[tab.id];
             return (
               <li key={tab.href}>
                 <Link
@@ -114,12 +103,12 @@ export default function BottomNav() {
                       strokeWidth={active ? 2.4 : 2}
                       className={active ? "text-white" : "text-fg/80"}
                     />
-                    {tab.badge !== undefined && tab.badge > 0 && (
+                    {badge !== undefined && badge > 0 && (
                       <span
-                        aria-label={`${tab.badge} new`}
+                        aria-label={`${badge} new`}
                         className="hz-pill-danger absolute -right-1 -top-0.5 grid min-h-[16px] min-w-[16px] place-items-center rounded-full px-1 text-[10px] font-bold ring-2 ring-card-elevated"
                       >
-                        {tab.badge}
+                        {badge}
                       </span>
                     )}
                   </span>

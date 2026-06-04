@@ -182,8 +182,8 @@ describe("add_category / rename_category / delete_category", () => {
           id: "t2",
           category: "Split",
           splits: [
-            { id: "s1", category: "Groceries", amount: -10 },
-            { id: "s2", category: "Gas", amount: -20 },
+            { category: "Groceries", amount: -10 },
+            { category: "Gas", amount: -20 },
           ],
         }),
         tx({ id: "t3", category: "Gas", amount: -25 }),
@@ -1017,12 +1017,13 @@ describe("settings / notes / restore", () => {
 });
 
 describe("rules", () => {
-  const rule = (id: string, payee: string) => ({
-    id,
-    pattern: payee,
-    category: "Groceries",
-    enabled: true,
-  });
+  const rule = (id: string, payee: string) =>
+    ({
+      id,
+      pattern: payee,
+      mode: "contains",
+      category: "Groceries",
+    }) as const;
 
   it("add_rule / update_rule / delete_rule", () => {
     const r1 = rule("r1", "kroger");
