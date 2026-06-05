@@ -47,6 +47,10 @@ import {
 } from "@/lib/cloudSync";
 import { setCurrency as setCurrencyFormatter } from "@/lib/format";
 import {
+  type PaycheckEntry,
+  samplePaycheckEntries,
+} from "@/lib/paycheck";
+import {
   type FudgetRecurring,
   type PlannerBudget,
   type PlannerEntry,
@@ -204,6 +208,14 @@ export type State = {
   plannerBudgets: PlannerBudget[];
   plannerEntries: PlannerEntry[];
   fudgetRecurring: FudgetRecurring[];
+  // Hours-logged-by-day for the paycheck tracker. Cleared by hand when
+  // the check posts; the running total stays "next check, gross" until
+  // then. Multiplied against `paycheckHourlyRate` to project earnings.
+  paycheckEntries: PaycheckEntry[];
+  // Current hourly rate the paycheck tracker multiplies hours against.
+  // Undefined until the user enters a rate — the page renders a
+  // single-field setup state in that case.
+  paycheckHourlyRate?: number;
   scheduledTransactions: ScheduledTransaction[];
   reconciliations: Reconciliation[];
   monthNotes: Record<string, string>;
@@ -241,6 +253,8 @@ export type Action =
       plannerBudgets: PlannerBudget[];
       plannerEntries: PlannerEntry[];
       fudgetRecurring: FudgetRecurring[];
+      paycheckEntries: PaycheckEntry[];
+      paycheckHourlyRate?: number;
       scheduledTransactions: ScheduledTransaction[];
       reconciliations: Reconciliation[];
       monthNotes: Record<string, string>;
@@ -395,6 +409,11 @@ export type Action =
   | { type: "add_fudget_recurring"; item: FudgetRecurring }
   | { type: "update_fudget_recurring"; item: FudgetRecurring }
   | { type: "delete_fudget_recurring"; id: string }
+  | { type: "add_paycheck_entry"; entry: PaycheckEntry }
+  | { type: "update_paycheck_entry"; entry: PaycheckEntry }
+  | { type: "delete_paycheck_entry"; id: string }
+  | { type: "clear_paycheck_entries" }
+  | { type: "set_paycheck_hourly_rate"; rate: number | null }
   | {
       type: "duplicate_planner_budget";
       budgetId: string;
@@ -422,6 +441,7 @@ const initialState: State = {
   plannerBudgets: samplePlannerBudgets,
   plannerEntries: samplePlannerEntries,
   fudgetRecurring: sampleFudgetRecurring,
+  paycheckEntries: samplePaycheckEntries,
   scheduledTransactions: samplePlannerScheduled,
   reconciliations: [],
   monthNotes: {},
@@ -590,6 +610,8 @@ export function coreReducer(state: State, action: Action): State {
         plannerBudgets: action.plannerBudgets,
         plannerEntries: action.plannerEntries,
         fudgetRecurring: action.fudgetRecurring,
+        paycheckEntries: action.paycheckEntries,
+        paycheckHourlyRate: action.paycheckHourlyRate,
         scheduledTransactions: action.scheduledTransactions,
         reconciliations: action.reconciliations,
         monthNotes: action.monthNotes,
@@ -1696,6 +1718,48 @@ export function coreReducer(state: State, action: Action): State {
         ),
         tombstones: recordTombstones(state.tombstones, action.id),
       };
+    case "add_paycheck_entry":
+      return {
+        ...state,
+        paycheckEntries: [...state.paycheckEntries, action.entry],
+      };
+    case "update_paycheck_entry":
+      return {
+        ...state,
+        paycheckEntries: state.paycheckEntries.map((e) =>
+          e.id === action.entry.id ? action.entry : e,
+        ),
+      };
+    case "delete_paycheck_entry":
+      return {
+        ...state,
+        paycheckEntries: state.paycheckEntries.filter(
+          (e) => e.id !== action.id,
+        ),
+        tombstones: recordTombstones(state.tombstones, action.id),
+      };
+    case "clear_paycheck_entries": {
+      // Tombstone every entry id so an offline device with the same
+      // entries cached can't re-union them on next sync. Common case:
+      // user clears the list when the check posts, and the other
+      // household phone hasn't opened in a while.
+      const ids = state.paycheckEntries.map((e) => e.id);
+      if (ids.length === 0) return state;
+      return {
+        ...state,
+        paycheckEntries: [],
+        tombstones: recordTombstones(state.tombstones, ...ids),
+      };
+    }
+    case "set_paycheck_hourly_rate": {
+      if (action.rate === null || !Number.isFinite(action.rate) || action.rate < 0) {
+        if (state.paycheckHourlyRate === undefined) return state;
+        const { paycheckHourlyRate: _drop, ...rest } = state;
+        void _drop;
+        return rest as State;
+      }
+      return { ...state, paycheckHourlyRate: action.rate };
+    }
     case "duplicate_planner_budget": {
       const sourceEntries = state.plannerEntries.filter(
         (e) => e.budgetId === action.budgetId,
@@ -1840,6 +1904,13 @@ export function coreReducer(state: State, action: Action): State {
         fudgetRecurring: Array.isArray(action.payload.fudgetRecurring)
           ? (action.payload.fudgetRecurring as FudgetRecurring[])
           : state.fudgetRecurring,
+        paycheckEntries: Array.isArray(action.payload.paycheckEntries)
+          ? (action.payload.paycheckEntries as PaycheckEntry[])
+          : state.paycheckEntries,
+        paycheckHourlyRate:
+          typeof action.payload.paycheckHourlyRate === "number"
+            ? action.payload.paycheckHourlyRate
+            : state.paycheckHourlyRate,
         scheduledTransactions: Array.isArray(action.payload.scheduledTransactions)
           ? action.payload.scheduledTransactions
           : state.scheduledTransactions,
@@ -1975,6 +2046,8 @@ type Ctx = {
   plannerBudgets: PlannerBudget[];
   plannerEntries: PlannerEntry[];
   fudgetRecurring: FudgetRecurring[];
+  paycheckEntries: PaycheckEntry[];
+  paycheckHourlyRate?: number;
   scheduledTransactions: ScheduledTransaction[];
   addTransaction: (tx: Omit<Transaction, "id">) => void;
   addTransactions: (txs: Omit<Transaction, "id">[]) => void;
@@ -2102,6 +2175,11 @@ type Ctx = {
   addFudgetRecurring: (input: Omit<FudgetRecurring, "id">) => void;
   updateFudgetRecurring: (item: FudgetRecurring) => void;
   deleteFudgetRecurring: (id: string) => void;
+  addPaycheckEntry: (input: Omit<PaycheckEntry, "id">) => void;
+  updatePaycheckEntry: (entry: PaycheckEntry) => void;
+  deletePaycheckEntry: (id: string) => void;
+  clearPaycheckEntries: () => void;
+  setPaycheckHourlyRate: (rate: number | null) => void;
   addPlannerFolder: (name: string) => void;
   renamePlannerFolder: (folderId: string, name: string) => void;
   deletePlannerFolder: (folderId: string) => void;
@@ -2329,6 +2407,13 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
             fudgetRecurring: Array.isArray(parsed.fudgetRecurring)
               ? (parsed.fudgetRecurring as FudgetRecurring[])
               : sampleFudgetRecurring,
+            paycheckEntries: Array.isArray(parsed.paycheckEntries)
+              ? (parsed.paycheckEntries as PaycheckEntry[])
+              : samplePaycheckEntries,
+            paycheckHourlyRate:
+              typeof parsed.paycheckHourlyRate === "number"
+                ? parsed.paycheckHourlyRate
+                : undefined,
             scheduledTransactions: Array.isArray(parsed.scheduledTransactions)
               ? parsed.scheduledTransactions
               : [],
@@ -2384,6 +2469,7 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       plannerBudgets: samplePlannerBudgets,
       plannerEntries: samplePlannerEntries,
       fudgetRecurring: sampleFudgetRecurring,
+      paycheckEntries: samplePaycheckEntries,
       scheduledTransactions: samplePlannerScheduled,
       reconciliations: [],
       monthNotes: {},
@@ -2674,6 +2760,8 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
           plannerBudgets: state.plannerBudgets,
           plannerEntries: state.plannerEntries,
           fudgetRecurring: state.fudgetRecurring,
+          paycheckEntries: state.paycheckEntries,
+          paycheckHourlyRate: state.paycheckHourlyRate,
           scheduledTransactions: state.scheduledTransactions,
           reconciliations: state.reconciliations,
           monthNotes: state.monthNotes,
@@ -3105,6 +3193,28 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "delete_fudget_recurring", id });
   }, []);
 
+  const addPaycheckEntry = useCallback(
+    (input: Omit<PaycheckEntry, "id">) => {
+      dispatch({
+        type: "add_paycheck_entry",
+        entry: { ...input, id: makeId() },
+      });
+    },
+    [],
+  );
+  const updatePaycheckEntry = useCallback((entry: PaycheckEntry) => {
+    dispatch({ type: "update_paycheck_entry", entry });
+  }, []);
+  const deletePaycheckEntry = useCallback((id: string) => {
+    dispatch({ type: "delete_paycheck_entry", id });
+  }, []);
+  const clearPaycheckEntries = useCallback(() => {
+    dispatch({ type: "clear_paycheck_entries" });
+  }, []);
+  const setPaycheckHourlyRate = useCallback((rate: number | null) => {
+    dispatch({ type: "set_paycheck_hourly_rate", rate });
+  }, []);
+
   const addPlannerFolder = useCallback((name: string) => {
     dispatch({
       type: "add_planner_folder",
@@ -3264,6 +3374,8 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
           plannerBudgets: state.plannerBudgets,
           plannerEntries: state.plannerEntries,
           fudgetRecurring: state.fudgetRecurring,
+          paycheckEntries: state.paycheckEntries,
+          paycheckHourlyRate: state.paycheckHourlyRate,
           scheduledTransactions: state.scheduledTransactions,
           reconciliations: state.reconciliations,
           monthNotes: state.monthNotes,
@@ -3505,6 +3617,8 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
             plannerBudgets: state.plannerBudgets,
             plannerEntries: state.plannerEntries,
             fudgetRecurring: state.fudgetRecurring,
+            paycheckEntries: state.paycheckEntries,
+            paycheckHourlyRate: state.paycheckHourlyRate,
             scheduledTransactions: state.scheduledTransactions,
             reconciliations: state.reconciliations,
             monthNotes: state.monthNotes,
@@ -3647,6 +3761,8 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
           plannerBudgets: state.plannerBudgets,
           plannerEntries: state.plannerEntries,
           fudgetRecurring: state.fudgetRecurring,
+          paycheckEntries: state.paycheckEntries,
+          paycheckHourlyRate: state.paycheckHourlyRate,
           scheduledTransactions: state.scheduledTransactions,
           settings: state.settings,
         },
@@ -3724,6 +3840,8 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       plannerBudgets: state.plannerBudgets,
       plannerEntries: state.plannerEntries,
       fudgetRecurring: state.fudgetRecurring,
+      paycheckEntries: state.paycheckEntries,
+      paycheckHourlyRate: state.paycheckHourlyRate,
       scheduledTransactions: state.scheduledTransactions,
       addTransaction,
       addTransactions,
@@ -3790,6 +3908,11 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       addFudgetRecurring,
       updateFudgetRecurring,
       deleteFudgetRecurring,
+      addPaycheckEntry,
+      updatePaycheckEntry,
+      deletePaycheckEntry,
+      clearPaycheckEntries,
+      setPaycheckHourlyRate,
       addPlannerFolder,
       renamePlannerFolder,
       deletePlannerFolder,
@@ -3905,6 +4028,11 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
       addFudgetRecurring,
       updateFudgetRecurring,
       deleteFudgetRecurring,
+      addPaycheckEntry,
+      updatePaycheckEntry,
+      deletePaycheckEntry,
+      clearPaycheckEntries,
+      setPaycheckHourlyRate,
       addPlannerFolder,
       renamePlannerFolder,
       deletePlannerFolder,

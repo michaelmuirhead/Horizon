@@ -169,14 +169,18 @@ export default function CloudSyncBridge() {
   // Live updates from other devices. We merge incoming changes into the
   // local payload instead of clobbering, so an edit-in-progress on this
   // device survives a concurrent push from another. Echoes of our own
-  // writes are filtered by the `updatedAt <= lastSyncedAtRef` check.
+  // writes are filtered by matching `updatedAt` to the exact stamp we
+  // just pushed — anything else is a real remote write and goes through
+  // the merge. (A `<=` comparison would silently drop another device's
+  // push whenever its clock was even slightly behind ours, which is the
+  // default state between any two phones.)
   useEffect(() => {
     if (status !== "signed-in" || !user || !currentBudgetId) return;
     let cancelled = false;
     let unsubscribe: (() => void) | undefined;
     subscribeFn((remote) => {
       if (cancelled) return;
-      if (remote.updatedAt <= lastSyncedAtRef.current) return;
+      if (remote.updatedAt === lastSyncedAtRef.current) return;
       const localPayload = exportBackupRef.current();
       const merged = mergePayloads(localPayload, remote.payload as Parameters<typeof mergePayloads>[1]);
       restoreFromBackup(merged as Parameters<typeof restoreFromBackup>[0]);

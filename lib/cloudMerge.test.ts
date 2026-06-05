@@ -147,4 +147,30 @@ describe("mergePayloads", () => {
     const remote = { tombstones: { x: 50 } };
     expect(mergePayloads(local, remote).tombstones).toEqual({ x: 100 });
   });
+
+  it("union still picks up the loser side's new ids (regression: cross-device clock skew)", () => {
+    // Two phones in the same household. Wife edited May 2026 on her
+    // phone with a clock running a few seconds behind. Husband's phone
+    // has a newer lastModifiedAt (his clock is ahead) — so it wins the
+    // LWW tiebreak. The merge MUST still pull in wife's new planner
+    // entries; otherwise the live-subscribe path on his phone silently
+    // drops her edits and his folder balance never updates.
+    const local = {
+      plannerEntries: [
+        { id: "his-e1", budgetId: "may", amount: 100 },
+      ],
+      lastModifiedAt: 1735000005000, // his clock
+    };
+    const remote = {
+      plannerEntries: [
+        { id: "her-e1", budgetId: "may", amount: -200 },
+        { id: "her-e2", budgetId: "may", amount: -75 },
+      ],
+      lastModifiedAt: 1735000000000, // her clock — 5 seconds behind
+    };
+    const merged = mergePayloads(local, remote);
+    expect(merged.plannerEntries?.map((e) => e.id).sort()).toEqual(
+      ["her-e1", "her-e2", "his-e1"].sort(),
+    );
+  });
 });

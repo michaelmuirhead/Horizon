@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Download,
   LayoutDashboard,
+  LayoutGrid,
   Layers,
   LogOut,
   Share2,
@@ -215,6 +216,23 @@ export default function SettingsPage() {
             <span className="block text-base font-bold">Customize home</span>
             <span className="mt-0.5 block text-xs text-fg/60">
               Reorder or hide sections on the home tab.
+            </span>
+          </span>
+          <ChevronRight size={18} className="text-fg/55" />
+        </Link>
+
+        <Link
+          href="/settings/tabs"
+          className="flex items-center gap-3 rounded-2xl bg-card p-4"
+        >
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent/15 text-accent">
+            <LayoutGrid size={18} strokeWidth={2.4} />
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-base font-bold">Customize tabs</span>
+            <span className="mt-0.5 block text-xs text-fg/60">
+              Hide tabs you don&rsquo;t use &mdash; strip the app down to a
+              Fudget-only ledger or anything in between.
             </span>
           </span>
           <ChevronRight size={18} className="text-fg/55" />
