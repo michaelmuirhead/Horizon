@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
 import {
   ChevronRight,
+  Clock,
   Copy,
   Folder,
   Pencil,
@@ -393,7 +394,7 @@ export default function PlannerPage() {
       )}
 
       {!searching && (
-      <div className="px-4 pt-4 pb-2">
+      <div className="px-4 pt-4 pb-2 space-y-3">
         {creating ? (
           <form
             onSubmit={submitCreate}
@@ -430,6 +431,13 @@ export default function PlannerPage() {
             Add Folder
           </button>
         )}
+        <Link
+          href="/paycheck"
+          className="flex w-full items-center justify-center gap-2 rounded-full border border-emerald-400/40 px-5 py-3 text-sm font-bold text-emerald-400"
+        >
+          <Clock size={16} strokeWidth={2.5} />
+          Paycheck tracker
+        </Link>
       </div>
       )}
     </>

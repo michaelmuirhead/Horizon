@@ -32,6 +32,7 @@ function emptyState(overrides: Partial<State> = {}): State {
     plannerBudgets: [],
     plannerEntries: [],
     fudgetRecurring: [],
+    paycheckEntries: [],
     scheduledTransactions: [],
     reconciliations: [],
     monthNotes: {},
@@ -1052,5 +1053,69 @@ describe("rules", () => {
       ruleIds: ["r3", "r1", "r2"],
     });
     expect(after.rules.map((r) => r.id)).toEqual(["r3", "r1", "r2"]);
+  });
+});
+
+describe("paycheck reducers", () => {
+  it("add / update / delete paycheck entries", () => {
+    const added = coreReducer(emptyState(), {
+      type: "add_paycheck_entry",
+      entry: { id: "p1", date: "2026-06-01", hours: 8 },
+    });
+    expect(added.paycheckEntries).toEqual([
+      { id: "p1", date: "2026-06-01", hours: 8 },
+    ]);
+    const updated = coreReducer(added, {
+      type: "update_paycheck_entry",
+      entry: { id: "p1", date: "2026-06-01", hours: 8.5, note: "OT" },
+    });
+    expect(updated.paycheckEntries[0]).toEqual({
+      id: "p1",
+      date: "2026-06-01",
+      hours: 8.5,
+      note: "OT",
+    });
+    const removed = coreReducer(updated, {
+      type: "delete_paycheck_entry",
+      id: "p1",
+    });
+    expect(removed.paycheckEntries).toEqual([]);
+    expect(removed.tombstones).toMatchObject({ p1: expect.any(Number) });
+  });
+
+  it("clear_paycheck_entries tombstones every entry and no-ops when already empty", () => {
+    const seed = emptyState({
+      paycheckEntries: [
+        { id: "p1", date: "2026-06-01", hours: 8 },
+        { id: "p2", date: "2026-06-02", hours: 7.5 },
+      ],
+    });
+    const cleared = coreReducer(seed, { type: "clear_paycheck_entries" });
+    expect(cleared.paycheckEntries).toEqual([]);
+    expect(cleared.tombstones).toMatchObject({
+      p1: expect.any(Number),
+      p2: expect.any(Number),
+    });
+    // Subsequent clear on empty list is a true no-op (same state ref).
+    const noop = coreReducer(cleared, { type: "clear_paycheck_entries" });
+    expect(noop).toBe(cleared);
+  });
+
+  it("set_paycheck_hourly_rate writes valid values and strips on null/invalid", () => {
+    const set = coreReducer(emptyState(), {
+      type: "set_paycheck_hourly_rate",
+      rate: 22.5,
+    });
+    expect(set.paycheckHourlyRate).toBe(22.5);
+    const cleared = coreReducer(set, {
+      type: "set_paycheck_hourly_rate",
+      rate: null,
+    });
+    expect("paycheckHourlyRate" in cleared).toBe(false);
+    const bad = coreReducer(set, {
+      type: "set_paycheck_hourly_rate",
+      rate: -5,
+    });
+    expect("paycheckHourlyRate" in bad).toBe(false);
   });
 });

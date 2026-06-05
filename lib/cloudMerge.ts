@@ -30,6 +30,8 @@ type StatePayload = {
   plannerBudgets?: IdItem[];
   plannerEntries?: IdItem[];
   fudgetRecurring?: IdItem[];
+  paycheckEntries?: IdItem[];
+  paycheckHourlyRate?: number;
   scheduledTransactions?: IdItem[];
   reconciliations?: IdItem[];
   monthNotes?: Record<string, string>;
@@ -245,6 +247,16 @@ export function mergePayloads(
       unionById(local.fudgetRecurring, remote.fudgetRecurring, winner),
       tombstones,
     ),
+    paycheckEntries: filterTombstoned(
+      unionById(local.paycheckEntries, remote.paycheckEntries, winner),
+      tombstones,
+    ),
+    // Scalar settings follow the winner's value. Undefined means "no
+    // rate configured" and is a perfectly valid state.
+    paycheckHourlyRate:
+      winner === "local"
+        ? local.paycheckHourlyRate ?? remote.paycheckHourlyRate
+        : remote.paycheckHourlyRate ?? local.paycheckHourlyRate,
     scheduledTransactions: filterTombstoned(
       unionById(
         local.scheduledTransactions,
