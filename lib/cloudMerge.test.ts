@@ -173,4 +173,44 @@ describe("mergePayloads", () => {
       ["her-e1", "her-e2", "his-e1"].sort(),
     );
   });
+
+  it("paycheckEntries union by id, paycheckHourlyRate follows the winner", () => {
+    const local = {
+      paycheckEntries: [
+        { id: "p1", date: "2026-06-01", amount: 8 },
+        { id: "p2", date: "2026-06-02", amount: 7 },
+      ],
+      paycheckHourlyRate: 25,
+      lastModifiedAt: 100,
+    };
+    const remote = {
+      paycheckEntries: [{ id: "p3", date: "2026-06-03", amount: 6 }],
+      paycheckHourlyRate: 22,
+      lastModifiedAt: 50,
+    };
+    const merged = mergePayloads(local, remote);
+    expect(merged.paycheckEntries?.map((e) => e.id).sort()).toEqual([
+      "p1",
+      "p2",
+      "p3",
+    ]);
+    // Local wins on stamp → local rate wins.
+    expect(merged.paycheckHourlyRate).toBe(25);
+  });
+
+  it("paycheckHourlyRate falls back to whichever side has a value", () => {
+    // Common case during the transition: cloud doc was written by an
+    // older client that didn't carry the rate. Merge must still
+    // surface the local rate so the next push includes it again.
+    const localWins = mergePayloads(
+      { paycheckHourlyRate: 25, lastModifiedAt: 100 },
+      { lastModifiedAt: 50 },
+    );
+    expect(localWins.paycheckHourlyRate).toBe(25);
+    const remoteWins = mergePayloads(
+      { lastModifiedAt: 50 },
+      { paycheckHourlyRate: 25, lastModifiedAt: 100 },
+    );
+    expect(remoteWins.paycheckHourlyRate).toBe(25);
+  });
 });

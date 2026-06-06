@@ -3803,29 +3803,15 @@ export function HorizonStoreProvider({ children }: { children: ReactNode }) {
   const stateRef = useRef(state);
   stateRef.current = state;
   const exportBackup = useCallback((): Partial<State> => {
-    const s = stateRef.current;
-    return {
-      transactions: s.transactions,
-      accounts: s.accounts,
-      groups: s.groups,
-      assignments: s.assignments,
-      pinnedCategoryIds: s.pinnedCategoryIds,
-      targets: s.targets,
-      plannerFolders: s.plannerFolders,
-      plannerBudgets: s.plannerBudgets,
-      plannerEntries: s.plannerEntries,
-      fudgetRecurring: s.fudgetRecurring,
-      scheduledTransactions: s.scheduledTransactions,
-      reconciliations: s.reconciliations,
-      monthNotes: s.monthNotes,
-      rules: s.rules,
-      wishlist: s.wishlist,
-      savingsGoals: s.savingsGoals,
-      templates: s.templates,
-      settings: s.settings,
-      tombstones: s.tombstones,
-      lastModifiedAt: s.lastModifiedAt,
-    };
+    // Spread current state and strip the fields that are local-only
+    // (so we don't accidentally clobber another device's `hydrated`
+    // bookkeeping). Done this way — rather than listing each field —
+    // so adding a new slice to State automatically includes it in
+    // the cloud-sync snapshot, instead of silently disappearing on
+    // the next round-trip merge (an actual bug shipped here once).
+    const { hydrated: _hydrated, ...rest } = stateRef.current;
+    void _hydrated;
+    return rest;
   }, []);
 
   const value = useMemo<Ctx>(
