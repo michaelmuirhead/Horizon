@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
-import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { BadgeDollarSign, Check, Pencil, Plus, Trash2, X } from "lucide-react";
 import SubpageHeader from "@/components/layout/SubpageHeader";
 import { useHorizonStore } from "@/components/store/HorizonStore";
 import {
@@ -46,6 +46,9 @@ export default function PaycheckPage() {
   const {
     paycheckEntries,
     paycheckHourlyRate,
+    plannerFolders,
+    plannerBudgets,
+    addPlannerEntry,
     addPaycheckEntry,
     updatePaycheckEntry,
     deletePaycheckEntry,
@@ -70,6 +73,14 @@ export default function PaycheckPage() {
   const [editDate, setEditDate] = useState("");
   const [editNote, setEditNote] = useState("");
 
+  // "Cash check" — drops the running total into a budget of the
+  // user's choice as a positive PlannerEntry, then clears the log so
+  // the next pay period starts fresh.
+  const [cashing, setCashing] = useState(false);
+  const [cashBudgetId, setCashBudgetId] = useState<string>("");
+  const [cashLabel, setCashLabel] = useState<string>("Paycheck");
+  const [cashDate, setCashDate] = useState<string>(todayIso());
+
   const sortedEntries = useMemo(
     () => sortPaycheckEntries(paycheckEntries),
     [paycheckEntries],
@@ -79,6 +90,41 @@ export default function PaycheckPage() {
     () => summarizePaycheck(paycheckEntries, paycheckHourlyRate ?? 0),
     [paycheckEntries, paycheckHourlyRate],
   );
+
+  // Ordered list of budgets for the picker — folder order first, then
+  // each folder's budget order. Same sort the Fudget folder list uses
+  // so the picker reads in the same vertical order users already know.
+  const folderById = useMemo(
+    () => new Map(plannerFolders.map((f) => [f.id, f])),
+    [plannerFolders],
+  );
+  const orderedBudgets = useMemo(
+    () =>
+      [...plannerBudgets].sort((a, b) => {
+        const af = folderById.get(a.folderId)?.order ?? Number.MAX_SAFE_INTEGER;
+        const bf = folderById.get(b.folderId)?.order ?? Number.MAX_SAFE_INTEGER;
+        if (af !== bf) return af - bf;
+        return (
+          (a.order ?? Number.MAX_SAFE_INTEGER) -
+          (b.order ?? Number.MAX_SAFE_INTEGER)
+        );
+      }),
+    [plannerBudgets, folderById],
+  );
+
+  // When the cash sheet opens, pre-select the first available budget
+  // and reset the date to today so a stale "today" from an earlier
+  // session doesn't slip in.
+  useEffect(() => {
+    if (!cashing) return;
+    setCashDate(todayIso());
+    if (cashBudgetId === "" && orderedBudgets.length > 0) {
+      setCashBudgetId(orderedBudgets[0].id);
+    }
+    // We deliberately want this to fire only when the sheet opens, not
+    // every time orderedBudgets re-derives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cashing]);
 
   function startRateEdit() {
     setRateDraft(
@@ -142,6 +188,28 @@ export default function PaycheckPage() {
       markUndoable("Paycheck entries cleared");
       clearPaycheckEntries();
     }
+  }
+
+  function commitCashCheck(e: FormEvent) {
+    e.preventDefault();
+    const budget = plannerBudgets.find((b) => b.id === cashBudgetId);
+    if (!budget) return;
+    if (summary.totalEarnings <= 0) return;
+    const label = cashLabel.trim() === "" ? "Paycheck" : cashLabel.trim();
+    // Snapshot first so a single undo reverses BOTH writes (the new
+    // entry and the cleared log).
+    markUndoable(
+      `Cashed ${label} into ${budget.name} — tap to undo`,
+    );
+    addPlannerEntry({
+      budgetId: cashBudgetId,
+      label,
+      amount: summary.totalEarnings,
+      date: cashDate,
+    });
+    clearPaycheckEntries();
+    setCashing(false);
+    setCashLabel("Paycheck");
   }
 
   const hasRate = paycheckHourlyRate !== undefined && paycheckHourlyRate > 0;
@@ -235,6 +303,116 @@ export default function PaycheckPage() {
           </p>
         </div>
       </div>
+
+      {/* Cash check — drops the gross total into a Fudget budget as
+          an income entry, then clears the log so the next pay period
+          starts fresh. Single markUndoable snapshot covers both. */}
+      {summary.totalEarnings > 0 && !cashing && (
+        <div className="px-4 pt-3">
+          <button
+            type="button"
+            onClick={() => setCashing(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-full bg-emerald-500/20 px-5 py-3 text-base font-bold text-emerald-400"
+          >
+            <BadgeDollarSign size={18} strokeWidth={2.5} />
+            Cash check &middot; {formatCurrency(summary.totalEarnings)}
+          </button>
+        </div>
+      )}
+
+      {cashing && (
+        <div className="px-4 pt-3">
+          {orderedBudgets.length === 0 ? (
+            <div className="rounded-2xl bg-card p-4 space-y-3 text-sm">
+              <p className="font-bold text-fg">No Fudget budgets yet</p>
+              <p className="text-fg/65">
+                Create a folder + budget on the Fudget tab first, then
+                come back to cash this check into it.
+              </p>
+              <button
+                type="button"
+                onClick={() => setCashing(false)}
+                className="rounded-full bg-card-elevated px-4 py-2 text-xs font-bold text-fg/70"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <form
+              onSubmit={commitCashCheck}
+              className="rounded-2xl bg-card p-3 space-y-3"
+            >
+              <p className="text-xs font-bold uppercase tracking-wide text-fg/55">
+                Cash {formatCurrency(summary.totalEarnings)} into&hellip;
+              </p>
+              <label className="flex flex-col gap-1">
+                <span className="text-[11px] font-bold uppercase tracking-wide text-fg/55">
+                  Budget
+                </span>
+                <select
+                  value={cashBudgetId}
+                  onChange={(e) => setCashBudgetId(e.target.value)}
+                  className="rounded-md bg-card-elevated px-3 py-2 text-base outline-none"
+                >
+                  {orderedBudgets.map((b) => {
+                    const folder = folderById.get(b.folderId);
+                    return (
+                      <option key={b.id} value={b.id}>
+                        {folder ? `${folder.name} · ${b.name}` : b.name}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-fg/55">
+                    Label
+                  </span>
+                  <input
+                    type="text"
+                    value={cashLabel}
+                    onChange={(e) => setCashLabel(e.target.value)}
+                    placeholder="Paycheck"
+                    className="rounded-md bg-card-elevated px-3 py-2 text-base outline-none placeholder:text-fg/40"
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-fg/55">
+                    Date
+                  </span>
+                  <input
+                    type="date"
+                    value={cashDate}
+                    onChange={(e) => setCashDate(e.target.value)}
+                    className="rounded-md bg-card-elevated px-3 py-2 text-base outline-none"
+                  />
+                </label>
+              </div>
+              <p className="text-[11px] text-fg/55">
+                Adds a {formatCurrency(summary.totalEarnings)} income
+                entry to the selected budget and clears the logged
+                days. Tap Undo on the toast if you change your mind.
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCashing(false)}
+                  className="flex-1 rounded-full bg-card-elevated px-4 py-2.5 text-sm font-bold text-fg/70"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-[2] rounded-full bg-emerald-500 px-4 py-2.5 text-sm font-bold text-white"
+                >
+                  Cash {formatCurrency(summary.totalEarnings)}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
 
       {/* Add a day */}
       <div className="px-4 pt-4">
